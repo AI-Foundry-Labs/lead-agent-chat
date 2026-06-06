@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLang } from '@/components/lang-provider';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { AdminTabNav } from '@/components/admin/admin-tab-nav';
 import { AdminAssistant } from '@/components/admin/admin-assistant';
 import { DashboardPanel } from '@/components/admin/dashboard-panel';
 import { ConversationsPanel } from '@/components/admin/conversations-panel';
@@ -16,16 +16,30 @@ type Tab = 'assistant' | 'dashboard' | 'conversations' | 'config';
 export function AdminShell() {
   const { t } = useLang();
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>('assistant');
+  const [tab, setTab] = useState<Tab>('dashboard');
   const [data, setData] = useState<AdminData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     const res = await fetch('/api/admin/data');
-    if (res.ok) setData(await res.json());
-  }, []);
+    if (res.status === 401) {
+      router.push('/admin/login');
+      router.refresh();
+      return;
+    }
+    if (!res.ok) {
+      setError('load_failed');
+      setLoading(false);
+      return;
+    }
+    setData(await res.json());
+    setLoading(false);
+  }, [router]);
 
   useEffect(() => {
-    // Fetch-on-mount; setData runs after the await, not synchronously.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refetch();
   }, [refetch]);
@@ -44,28 +58,26 @@ export function AdminShell() {
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex flex-wrap gap-1 rounded-lg border p-1">
-          {tabs.map((tb) => (
-            <button
-              key={tb.key}
-              onClick={() => setTab(tb.key)}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-sm transition-colors',
-                tab === tb.key
-                  ? 'bg-neutral-900 text-white'
-                  : 'text-neutral-600 hover:bg-muted'
-              )}
-            >
-              {tb.label}
-            </button>
-          ))}
-        </div>
-        <Button variant="ghost" size="sm" onClick={() => void logout()}>
+        <AdminTabNav tabs={tabs} active={tab} onChange={setTab} />
+        <Button variant="outline" size="sm" onClick={() => void logout()}>
           {t.logout}
         </Button>
       </div>
+
+      {error && (
+        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Failed to load admin data.
+        </p>
+      )}
+
+      {loading && !data && (
+        <div className="space-y-3">
+          <div className="h-24 animate-pulse rounded-xl bg-muted" />
+          <div className="h-48 animate-pulse rounded-xl bg-muted" />
+        </div>
+      )}
 
       {tab === 'assistant' && <AdminAssistant />}
       {tab === 'dashboard' && <DashboardPanel data={data} />}

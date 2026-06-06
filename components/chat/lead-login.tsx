@@ -1,12 +1,18 @@
 'use client';
 
 import { useState } from 'react';
+import { Mail } from 'lucide-react';
 import { useLang } from '@/components/lang-provider';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
-// Optional, ChatGPT-style login: enter an email to receive a magic link that
-// persists the conversation + attaches a lead identity. In dev the link is shown
-// inline (no mail provider needed).
-export function LeadLogin() {
+export function LeadLogin({
+  prominent = false,
+  className
+}: {
+  prominent?: boolean;
+  className?: string;
+}) {
   const { t, lang } = useLang();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
@@ -27,22 +33,35 @@ export function LeadLogin() {
 
   if (!open) {
     return (
-      <button
+      <Button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+        variant={prominent ? 'default' : 'ghost'}
+        size={prominent ? 'default' : 'sm'}
+        className={cn(
+          prominent && 'rounded-full bg-brand text-brand-foreground hover:bg-brand/90',
+          className
+        )}
       >
+        <Mail className="size-4" aria-hidden />
         {t.login}
-      </button>
+      </Button>
     );
   }
 
   if (sent) {
     return (
-      <div className="text-xs text-muted-foreground">
+      <div
+        className={cn(
+          prominent
+            ? 'max-w-sm rounded-2xl border border-border/80 bg-card p-4 text-sm text-muted-foreground shadow-[var(--shadow-elevated)]'
+            : 'text-xs text-muted-foreground',
+          className
+        )}
+      >
         {t.login_sent}
         {devLink && (
-          <a href={devLink} className="ml-1 block break-all text-sky-600 underline">
+          <a href={devLink} className="mt-2 block break-all text-brand underline underline-offset-2">
             {t.login_dev} {devLink}
           </a>
         )}
@@ -51,21 +70,32 @@ export function LeadLogin() {
   }
 
   return (
-    <div className="flex items-center gap-1">
+    <div
+      className={cn(
+        prominent
+          ? 'flex w-full max-w-sm flex-col gap-2 rounded-2xl border border-border/80 bg-card p-3 shadow-[var(--shadow-elevated)] sm:flex-row sm:items-center'
+          : 'flex items-center gap-2',
+        className
+      )}
+    >
       <input
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         placeholder={t.login_email_prompt}
-        className="w-44 rounded border px-2 py-1 text-xs outline-none"
+        aria-label={t.login_email_prompt}
+        className={cn(
+          'min-h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 py-2 text-base outline-none transition focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20',
+          !prominent && 'w-44 text-sm'
+        )}
       />
-      <button
+      <Button
         type="button"
         onClick={() => void request()}
-        className="rounded bg-neutral-900 px-2 py-1 text-xs text-white"
+        className="min-h-11 rounded-xl bg-brand text-brand-foreground hover:bg-brand/90"
       >
         {t.login_send}
-      </button>
+      </Button>
     </div>
   );
 }

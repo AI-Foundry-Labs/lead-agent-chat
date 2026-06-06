@@ -10,6 +10,8 @@ export const dict = {
     brand: 'Agence Lumière',
     lang_fr: 'FR',
     lang_en: 'EN',
+    nav_listings: 'Biens',
+    home_eyebrow: 'Immobilier parisien',
     home_subtitle:
       'Parcourez nos biens et discutez avec notre assistant pour organiser une visite.',
     home_empty: 'Aucun bien pour le moment. Lancez',
@@ -76,6 +78,8 @@ export const dict = {
     brand: 'Agence Lumière',
     lang_fr: 'FR',
     lang_en: 'EN',
+    nav_listings: 'Listings',
+    home_eyebrow: 'Paris real estate',
     home_subtitle:
       'Browse our properties and chat with our assistant to arrange a viewing.',
     home_empty: 'No properties yet. Run',

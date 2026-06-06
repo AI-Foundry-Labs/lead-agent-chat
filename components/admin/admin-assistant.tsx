@@ -3,10 +3,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { ChatBubble } from '@/components/chat/chat-bubble';
+import { ChatComposer } from '@/components/chat/chat-composer';
+import { ChatMessageList, ChatShell, ChatTypingIndicator } from '@/components/chat/chat-shell';
 import { useLang } from '@/components/lang-provider';
 
 type Msg = { id: string; role: string; content: string };
+type TelegramLinkInfo = {
+  command: string;
+  deepLink: string | null;
+  configured: boolean;
+};
 
 export function AdminAssistant() {
   const router = useRouter();
@@ -14,22 +21,30 @@ export function AdminAssistant() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [linkInfo, setLinkInfo] = useState<string | null>(null);
+  const [linkInfo, setLinkInfo] = useState<TelegramLinkInfo | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { t } = useLang();
 
-  // Bootstrap: fetch (or create) the assistant conversation + thread.
   useEffect(() => {
     fetch('/api/admin/chat')
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (r.status === 401) {
+          router.push('/admin/login');
+          router.refresh();
+          return null;
+        }
+        if (!r.ok) throw new Error('chat_load_failed');
+        return r.json();
+      })
       .then((d) => {
+        if (!d) return;
         if (d.conversationId) setConversationId(d.conversationId);
         if (d.messages) setMessages(d.messages);
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => setLoadError('chat_load_failed'));
+  }, [router]);
 
-  // Sync via the shared conversation SSE stream (web + Telegram dual-client).
   useEffect(() => {
     if (!conversationId) return;
     const es = new EventSource(`/api/chat/stream?conversationId=${conversationId}`);
@@ -41,7 +56,7 @@ export function AdminAssistant() {
   }, [conversationId]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, sending]);
 
   async function send() {
@@ -64,81 +79,71 @@ export function AdminAssistant() {
   async function linkTelegram() {
     const res = await fetch('/api/admin/link-telegram', { method: 'POST' });
     const d = await res.json();
-    setLinkInfo(d.command ?? null);
-  }
-
-  async function logout() {
-    await fetch('/api/auth/admin/logout', { method: 'POST' });
-    router.push('/admin/login');
-    router.refresh();
+    setLinkInfo({
+      command: d.command ?? '',
+      deepLink: d.deep_link ?? null,
+      configured: Boolean(d.configured)
+    });
   }
 
   return (
-    <Card className="flex h-[640px] flex-col p-0">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div>
-          <p className="text-sm font-medium">{t.assistant_title}</p>
-          <p className="text-xs text-muted-foreground">{t.assistant_examples}</p>
-        </div>
-        <div className="flex gap-2">
+    <div className="space-y-3">
+      <ChatShell
+        title={t.assistant_title}
+        subtitle={t.assistant_examples}
+        heightClass="h-[640px]"
+        headerAction={
           <Button variant="outline" size="sm" onClick={() => void linkTelegram()}>
             {t.link_telegram}
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => void logout()}>
-            {t.logout}
-          </Button>
-        </div>
-      </div>
+        }
+        footer={
+          <ChatComposer
+            value={input}
+            onChange={setInput}
+            onSend={() => void send()}
+            placeholder={t.assistant_placeholder}
+            sendLabel={t.send}
+            disabled={sending}
+          />
+        }
+      >
+        {linkInfo && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-border/80 bg-muted/30 px-4 py-2.5 text-xs">
+            <span>{t.link_info}</span>
+            <code className="rounded-md bg-background px-2 py-0.5">{linkInfo.command}</code>
+            {linkInfo.deepLink && (
+              <a
+                href={linkInfo.deepLink}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-md bg-brand px-2.5 py-1 font-medium text-brand-foreground"
+              >
+                Open bot
+              </a>
+            )}
+            {!linkInfo.configured && (
+              <span className="text-red-700">Telegram bot token is missing.</span>
+            )}
+          </div>
+        )}
 
-      {linkInfo && (
-        <p className="border-b bg-muted/50 px-4 py-2 text-xs">
-          {t.link_info}{' '}
-          <code className="rounded bg-background px-1">{linkInfo}</code>
-        </p>
-      )}
-
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        {messages.length === 0 && (
-          <p className="text-center text-sm text-muted-foreground">
-            {t.assistant_empty}
+        {loadError && (
+          <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
+            Failed to load assistant conversation.
           </p>
         )}
-        {messages.map((m) => (
-          <div
-            key={m.id}
-            className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
-          >
-            <div
-              className={
-                m.role === 'user'
-                  ? 'max-w-[80%] whitespace-pre-wrap rounded-2xl bg-neutral-900 px-3 py-2 text-sm text-white'
-                  : 'max-w-[80%] whitespace-pre-wrap rounded-2xl bg-muted px-3 py-2 text-sm'
-              }
-            >
-              {m.content}
-            </div>
-          </div>
-        ))}
-        {sending && <p className="text-center text-xs text-muted-foreground">…</p>}
-      </div>
 
-      <div className="flex gap-2 border-t p-3">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-          placeholder={t.assistant_placeholder}
-          className="flex-1 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-300"
-        />
-        <Button onClick={() => void send()} disabled={sending || !input.trim()}>
-          {t.send}
-        </Button>
-      </div>
-    </Card>
+        <ChatMessageList scrollRef={scrollRef}>
+          {messages.length === 0 && (
+            <p className="py-8 text-center text-sm text-muted-foreground">{t.assistant_empty}</p>
+          )}
+          {messages.map((m) => (
+            <ChatBubble key={m.id} role={m.role} content={m.content} />
+          ))}
+          {sending && <ChatTypingIndicator />}
+        </ChatMessageList>
+      </ChatShell>
+    </div>
   );
 }

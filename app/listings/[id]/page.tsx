@@ -1,8 +1,14 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import { ChevronLeft } from 'lucide-react';
 import { getListingById } from '@/lib/db';
 import { ChatPanel } from '@/components/chat/chat-panel';
-import { Badge } from '@/components/ui/badge';
+import { LeadLogin } from '@/components/chat/lead-login';
+import {
+  ListingFeaturesList,
+  ListingHeroImage,
+  ListingSpecBadges
+} from '@/components/listings/listing-detail-parts';
 import { formatPrice } from '@/lib/format';
 import { getLang } from '@/lib/i18n-server';
 import { getDict } from '@/lib/i18n';
@@ -28,49 +34,37 @@ export default async function ListingPage({
   const greeting = t.greeting(title);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <Link href="/" className="text-sm text-muted-foreground hover:underline">
-        {t.back_all}
-      </Link>
+    <main className="mx-auto max-w-6xl px-4 py-8 sm:py-10">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
+        >
+          <ChevronLeft className="size-4" aria-hidden />
+          {t.back_all.replace('← ', '')}
+        </Link>
+        <LeadLogin prominent />
+      </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_420px]">
-        <article className="space-y-5">
-          <div className="relative aspect-[16/9] overflow-hidden rounded-xl bg-gradient-to-br from-neutral-200 to-neutral-100">
-            {listing.image_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={listing.image_url}
-                alt={title}
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">
-              {listing.rooms} {t.rooms}
-            </Badge>
-            <Badge variant="secondary">{listing.surface_m2} m²</Badge>
-            <Badge variant="secondary">{floor}</Badge>
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold">{title}</h1>
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-10">
+        <article className="space-y-6 animate-fade-up">
+          <ListingHeroImage listing={listing} title={title} />
+          <ListingSpecBadges listing={listing} floor={floor} lang={lang} />
+          <div className="space-y-2">
+            <h1 className="font-display text-3xl font-semibold leading-tight">{title}</h1>
             <p className="text-muted-foreground">{listing.address}</p>
-            <p className="mt-2 text-xl font-semibold">
+            <p className="font-display text-2xl font-semibold text-brand">
               {formatPrice(listing.price, lang)}
             </p>
           </div>
-          <p className="leading-relaxed text-neutral-700">{description}</p>
+          <p className="max-w-prose text-base leading-relaxed text-foreground/85">{description}</p>
           <div>
-            <h2 className="mb-2 font-medium">{t.key_features}</h2>
-            <ul className="grid grid-cols-2 gap-1 text-sm text-neutral-700">
-              {features.map((f) => (
-                <li key={f}>· {f}</li>
-              ))}
-            </ul>
+            <h2 className="mb-3 font-display text-lg font-semibold">{t.key_features}</h2>
+            <ListingFeaturesList features={features} />
           </div>
         </article>
 
-        <aside className="lg:sticky lg:top-6 lg:self-start">
+        <aside className="lg:sticky lg:top-20 lg:self-start animate-fade-up-delay-1">
           <ChatPanel listingId={listing.id} greeting={greeting} />
         </aside>
       </div>

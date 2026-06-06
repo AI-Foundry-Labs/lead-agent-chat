@@ -3,10 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useLang } from '@/components/lang-provider';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { AdminSection } from '@/components/admin/admin-section';
 import { adminAction, type AdminData } from '@/components/admin/admin-types';
 import type { Criterion } from '@/lib/types';
+import { cn } from '@/lib/utils';
+
+const inputClass =
+  'min-h-10 rounded-lg border border-input bg-background px-3 py-2 text-base outline-none transition focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 sm:text-sm';
 
 export function ConfigPanel({
   data,
@@ -57,41 +61,41 @@ export function ConfigPanel({
   }
 
   useEffect(() => {
-    // Seed the editable criteria form whenever fresh data arrives.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (data) setCriteria(data.criteria);
   }, [data]);
 
-  if (!data) return <p className="text-sm text-muted-foreground">…</p>;
+  if (!data) return null;
 
   const setCrit = (i: number, patch: Partial<Criterion>) =>
     setCriteria((c) => c.map((x, j) => (j === i ? { ...x, ...patch } : x)));
 
   return (
-    <div className="space-y-8">
-      {/* Criteria */}
-      <section>
-        <h3 className="mb-2 text-sm font-medium">{t.cfg_criteria}</h3>
+    <div className="space-y-10">
+      <AdminSection title={t.cfg_criteria}>
         <div className="space-y-2">
           {criteria.map((c, i) => (
-            <div key={i} className="flex flex-wrap gap-2">
+            <div key={i} className="flex flex-wrap gap-2 rounded-xl border border-border/80 bg-card p-3">
               <input
                 value={c.key}
                 onChange={(e) => setCrit(i, { key: e.target.value })}
                 placeholder="key"
-                className="w-32 rounded border px-2 py-1 text-sm"
+                aria-label="Criterion key"
+                className={cn(inputClass, 'w-32')}
               />
               <input
                 value={c.label}
                 onChange={(e) => setCrit(i, { label: e.target.value })}
                 placeholder="label"
-                className="w-48 rounded border px-2 py-1 text-sm"
+                aria-label="Criterion label"
+                className={cn(inputClass, 'w-48')}
               />
               <input
                 value={c.hint ?? ''}
                 onChange={(e) => setCrit(i, { hint: e.target.value })}
                 placeholder="hint"
-                className="flex-1 rounded border px-2 py-1 text-sm"
+                aria-label="Criterion hint"
+                className={cn(inputClass, 'min-w-[12rem] flex-1')}
               />
               <Button
                 size="sm"
@@ -103,7 +107,7 @@ export function ConfigPanel({
             </div>
           ))}
         </div>
-        <div className="mt-2 flex gap-2">
+        <div className="mt-3 flex gap-2">
           <Button
             size="sm"
             variant="outline"
@@ -115,6 +119,7 @@ export function ConfigPanel({
           </Button>
           <Button
             size="sm"
+            className="bg-brand text-brand-foreground hover:bg-brand/90"
             onClick={async () => {
               await adminAction({
                 kind: 'update_criteria',
@@ -126,19 +131,17 @@ export function ConfigPanel({
             {t.cfg_save}
           </Button>
         </div>
-      </section>
+      </AdminSection>
 
-      {/* Handoff rules */}
-      <section>
-        <h3 className="mb-2 text-sm font-medium">{t.cfg_rules}</h3>
+      <AdminSection title={t.cfg_rules}>
         <div className="space-y-2">
           {data.rules.map((r) => (
             <div
               key={r.id}
-              className="flex items-center justify-between gap-2 rounded border p-2 text-sm"
+              className="flex items-center justify-between gap-2 rounded-xl border border-border/80 bg-card p-3 text-sm"
             >
               <span className="min-w-0">
-                <span className="block truncate">{r.description}</span>
+                <span className="block truncate font-medium">{r.description}</span>
                 <span className="block truncate text-xs text-muted-foreground">
                   {r.trigger_keywords.join(', ')}
                 </span>
@@ -168,21 +171,22 @@ export function ConfigPanel({
             </div>
           ))}
         </div>
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           <input
             value={ruleDesc}
             onChange={(e) => setRuleDesc(e.target.value)}
             placeholder="Description (plain language)"
-            className="w-72 rounded border px-2 py-1 text-sm"
+            className={cn(inputClass, 'w-72')}
           />
           <input
             value={ruleKw}
             onChange={(e) => setRuleKw(e.target.value)}
             placeholder="keywords, comma, separated"
-            className="w-60 rounded border px-2 py-1 text-sm"
+            className={cn(inputClass, 'w-60')}
           />
           <Button
             size="sm"
+            className="bg-brand text-brand-foreground hover:bg-brand/90"
             onClick={async () => {
               if (!ruleDesc.trim()) return;
               await adminAction({
@@ -198,14 +202,12 @@ export function ConfigPanel({
             + {t.cfg_add}
           </Button>
         </div>
-      </section>
+      </AdminSection>
 
-      {/* Listings */}
-      <section>
-        <h3 className="mb-2 text-sm font-medium">{t.cfg_listings}</h3>
-        <div className="divide-y rounded-lg border">
+      <AdminSection title={t.cfg_listings}>
+        <div className="divide-y divide-border/80 overflow-hidden rounded-xl border border-border/80 bg-card">
           {data.listings.map((l) => (
-            <div key={l.id} className="flex items-center justify-between gap-2 p-3 text-sm">
+            <div key={l.id} className="flex items-center justify-between gap-2 px-4 py-3 text-sm">
               <span className="min-w-0 truncate">
                 {l.title} <span className="text-muted-foreground">· {l.id}</span>
               </span>
@@ -223,16 +225,16 @@ export function ConfigPanel({
           ))}
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <input value={nl.id} onChange={(e) => setNl({ ...nl, id: e.target.value })} placeholder="id (slug)" className="w-32 rounded border px-2 py-1 text-sm" />
-          <input value={nl.title} onChange={(e) => setNl({ ...nl, title: e.target.value })} placeholder="Titre" className="w-48 rounded border px-2 py-1 text-sm" />
-          <input value={nl.address} onChange={(e) => setNl({ ...nl, address: e.target.value })} placeholder="Adresse" className="w-48 rounded border px-2 py-1 text-sm" />
-          <input value={nl.price} onChange={(e) => setNl({ ...nl, price: e.target.value })} placeholder="Prix €" className="w-24 rounded border px-2 py-1 text-sm" />
-          <input value={nl.rooms} onChange={(e) => setNl({ ...nl, rooms: e.target.value })} placeholder="Pièces" className="w-20 rounded border px-2 py-1 text-sm" />
-          <input value={nl.surface_m2} onChange={(e) => setNl({ ...nl, surface_m2: e.target.value })} placeholder="m²" className="w-20 rounded border px-2 py-1 text-sm" />
-          <input value={nl.image_url} onChange={(e) => setNl({ ...nl, image_url: e.target.value })} placeholder="image URL" className="w-48 rounded border px-2 py-1 text-sm" />
-          <Button size="sm" onClick={() => void addListing()}>+ {t.cfg_add}</Button>
+          <input value={nl.id} onChange={(e) => setNl({ ...nl, id: e.target.value })} placeholder="id (slug)" className={cn(inputClass, 'w-32')} />
+          <input value={nl.title} onChange={(e) => setNl({ ...nl, title: e.target.value })} placeholder="Titre" className={cn(inputClass, 'w-48')} />
+          <input value={nl.address} onChange={(e) => setNl({ ...nl, address: e.target.value })} placeholder="Adresse" className={cn(inputClass, 'w-48')} />
+          <input value={nl.price} onChange={(e) => setNl({ ...nl, price: e.target.value })} placeholder="Prix €" className={cn(inputClass, 'w-24')} />
+          <input value={nl.rooms} onChange={(e) => setNl({ ...nl, rooms: e.target.value })} placeholder="Pièces" className={cn(inputClass, 'w-20')} />
+          <input value={nl.surface_m2} onChange={(e) => setNl({ ...nl, surface_m2: e.target.value })} placeholder="m²" className={cn(inputClass, 'w-20')} />
+          <input value={nl.image_url} onChange={(e) => setNl({ ...nl, image_url: e.target.value })} placeholder="image URL" className={cn(inputClass, 'w-48')} />
+          <Button size="sm" className="bg-brand text-brand-foreground hover:bg-brand/90" onClick={() => void addListing()}>+ {t.cfg_add}</Button>
         </div>
-      </section>
+      </AdminSection>
     </div>
   );
 }
