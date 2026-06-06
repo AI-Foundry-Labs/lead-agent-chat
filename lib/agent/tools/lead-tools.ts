@@ -1,0 +1,193 @@
+import { tool } from 'ai';
+import { z } from 'zod';
+import {
+  getListing,
+  listListings,
+  updateLead,
+  updateConversation,
+  findBookedSlot,
+  createBookedViewing
+} from '@/lib/db';
+import { getAvailableSlots, createCalendarEvent } from '@/lib/calendar';
+import { notifyAdmins } from '@/lib/notify';
+import { formatPrice, formatSlot } from '@/lib/format';
+import type { AgentContext } from './context';
+import { ensureLead } from './context';
+
+export function buildLeadTools(ctx: AgentContext) {
+  const listingId = ctx.conversation.listing_id;
+
+  return {
+    get_listing: tool({
+      description:
+        'Get full details of a property. Defaults to the one under discussion.',
+      inputSchema: z.object({
+        listing_id: z.string().optional()
+      }),
+      execute: async ({ listing_id }) => {
+        const listing = await getListing(listing_id ?? listingId);
+        if (!listing) return { error: 'listing_not_found' };
+        return listing;
+      }
+    }),
+
+    search_listings: tool({
+      description:
+        'Find other properties matching rough criteria (price ceiling, min rooms, free-text).',
+      inputSchema: z.object({
+        max_price: z.number().int().positive().optional(),
+        min_rooms: z.number().int().positive().optional(),
+        query: z.string().optional()
+      }),
+      execute: async ({ max_price, min_rooms, query }) => {
+        const all = await listListings();
+        const q = query?.toLowerCase();
+        const matches = all.filter((l) => {
+          if (max_price && l.price > max_price) return false;
+          if (min_rooms && l.rooms < min_rooms) return false;
+          if (q && !`${l.title} ${l.address} ${l.description}`.toLowerCase().includes(q))
+            return false;
+          return true;
+        });
+        return matches.map((l) => ({
+          id: l.id,
+          title: l.title,
+          address: l.address,
+          price: formatPrice(l.price),
+          rooms: l.rooms,
+          surface_m2: l.surface_m2
+        }));
+      }
+    }),
+
+    record_qualification: tool({
+      description:
+        'Persist extracted qualification values, a computed potential status, and a one-line reason. Call whenever you learn new info.',
+      inputSchema: z.object({
+        values: z
+          .record(z.string(), z.string())
+          .describe('criterionKey → value, e.g. { budget: "800k€" }'),
+        potential_status: z.enum(['hot', 'warm', 'cold']),
+        reason: z.string().max(200)
+      }),
+      execute: async ({ values, potential_status, reason }) => {
+        const lead = await ensureLead(ctx);
+        const merged = { ...lead.qual_values, ...values };
+        const allKeys = ctx.config.qualification_criteria.map((c) => c.key);
+        const complete = allKeys.every((k) => merged[k]);
+        const updated = await updateLead(lead.id, {
+          qual_values: merged,
+          potential_status,
+          score_reason: reason,
+          status: complete ? 'qualified' : lead.status
+        });
+        return {
+          ok: true,
+          qual_values: updated.qual_values,
+          potential_status,
+          all_criteria_collected: complete
+        };
+      }
+    }),
+
+    get_available_slots: tool({
+      description: 'List candidate viewing slots for the property.',
+      inputSchema: z.object({ count: z.number().int().min(1).max(5).optional() }),
+      execute: async ({ count }) => {
+        const listing = await getListing(listingId);
+        if (!listing) return { error: 'no_listing_selected' };
+        const slots = await getAvailableSlots({
+          calendarId: listing.agent_calendar_id || ctx.config.calendar_id,
+          preferredTimeline: null,
+          count: count ?? 3
+        });
+        return {
+          slots: slots.map((iso) => ({ iso, label: formatSlot(iso) }))
+        };
+      }
+    }),
+
+    book_viewing: tool({
+      description:
+        'Book a viewing at a slot. Requires a contact email — if missing, ask the visitor for it first.',
+      inputSchema: z.object({
+        slot_iso: z.string(),
+        contact_email: z.string().email().optional(),
+        contact_name: z.string().optional()
+      }),
+      execute: async ({ slot_iso, contact_email, contact_name }) => {
+        const listing = await getListing(listingId);
+        if (!listing) return { error: 'no_listing_selected' };
+        const lead = await ensureLead(ctx);
+        const email = contact_email ?? lead.email ?? undefined;
+        if (!email) return { need_contact: true };
+
+        // Idempotency: don't double-book the same slot for this conversation.
+        const existing = await findBookedSlot(ctx.conversation.id, slot_iso);
+        if (existing) {
+          return { ok: true, already_booked: true, slot: formatSlot(slot_iso) };
+        }
+
+        const details = ctx.config.qualification_criteria
+          .map((c) => `${c.label}: ${lead.qual_values[c.key] ?? '—'}`)
+          .join('\n');
+        const eventId = await createCalendarEvent({
+          calendarId: listing.agent_calendar_id || ctx.config.calendar_id,
+          slotIso: slot_iso,
+          contactEmail: email,
+          contactName: contact_name ?? lead.name,
+          listing,
+          details: `Potential: ${lead.potential_status ?? '—'}\n${details}`
+        });
+        await createBookedViewing({
+          conversation_id: ctx.conversation.id,
+          lead_id: lead.id,
+          listing_id: listing.id,
+          contact_email: email,
+          confirmed_slot: slot_iso,
+          calendar_event_id: eventId,
+          summary: `Viewing booked for ${listing.title}`
+        });
+        await updateLead(lead.id, {
+          email,
+          name: contact_name ?? lead.name,
+          status: 'booked'
+        });
+        await notifyAdmins(
+          `Viewing booked: ${listing.title} on ${formatSlot(slot_iso)} (${email})`
+        );
+        return {
+          ok: true,
+          slot: formatSlot(slot_iso),
+          agent: listing.agent_name,
+          address: listing.address
+        };
+      }
+    }),
+
+    request_handoff: tool({
+      description:
+        'Flag this conversation for human follow-up (e.g. negotiation, sensitive topic). Stops auto-replies until an agent releases it.',
+      inputSchema: z.object({ reason: z.string().max(200) }),
+      execute: async ({ reason }) => {
+        ctx.conversation = await updateConversation(ctx.conversation.id, {
+          mode: 'manual'
+        });
+        if (ctx.conversation.lead_id) {
+          await updateLead(ctx.conversation.lead_id, { status: 'handoff' });
+        }
+        await notifyAdmins(`Handoff requested: ${reason}`);
+        return { ok: true, handed_off: true };
+      }
+    }),
+
+    notify_admin: tool({
+      description: 'Send a short notification to the agency admins.',
+      inputSchema: z.object({ summary: z.string().max(280) }),
+      execute: async ({ summary }) => {
+        await notifyAdmins(summary);
+        return { ok: true };
+      }
+    })
+  };
+}
