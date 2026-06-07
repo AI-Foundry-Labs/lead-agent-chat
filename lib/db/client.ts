@@ -22,5 +22,6 @@ export const {
   admin_sessions,
   lead_sessions,
   lead_magic_links,
-  telegram_link_tokens
+  telegram_link_tokens,
+  lead_telegram_link_tokens
 } = schema;

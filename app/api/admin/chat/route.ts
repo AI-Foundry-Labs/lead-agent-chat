@@ -39,7 +39,17 @@ export async function POST(req: Request) {
       adminId: admin.id,
       adminName: admin.name
     });
-    return Response.json({ conversationId: conv.id, reply: result.reply });
+    const messages = await getVisibleMessages(conv.id);
+    return Response.json({
+      conversationId: conv.id,
+      reply: result.reply,
+      messages: messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        tool_calls: m.tool_calls
+      }))
+    });
   } catch (e) {
     const authRes = toAuthResponse(e);
     if (authRes) return authRes;

@@ -11,8 +11,23 @@ import {
 import { getAvailableSlots, createCalendarEvent } from '@/lib/calendar';
 import { notifyAdmins } from '@/lib/notify';
 import { formatPrice, formatSlot } from '@/lib/format';
+import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
+import { formatConversationForMemory } from '@/lib/agent/cross-thread-context';
+import { issueLeadTelegramLinkToken } from '@/lib/auth';
+import { buildLeadTelegramLinkInfo } from '@/lib/telegram/build-lead-telegram-link';
+import { telegramConfigured } from '@/lib/telegram';
 import type { AgentContext } from './context';
 import { ensureLead } from './context';
+
+function qualFactsFromValues(
+  values: Record<string, string>,
+  criteria: { key: string; label: string }[]
+): string[] {
+  return Object.entries(values).map(([key, value]) => {
+    const label = criteria.find((c) => c.key === key)?.label ?? key;
+    return `${label}: ${value}`;
+  });
+}
 
 export function buildLeadTools(ctx: AgentContext) {
   const listingId = ctx.conversation.listing_id;
@@ -81,6 +96,14 @@ export function buildLeadTools(ctx: AgentContext) {
           score_reason: reason,
           status: complete ? 'qualified' : lead.status
         });
+        scheduleAppendLeadLongTermFacts(
+          lead.id,
+          [
+            ...qualFactsFromValues(values, ctx.config.qualification_criteria),
+            `potential: ${potential_status}`
+          ],
+          reason
+        );
         return {
           ok: true,
           qual_values: updated.qual_values,
@@ -156,6 +179,11 @@ export function buildLeadTools(ctx: AgentContext) {
         await notifyAdmins(
           `Viewing booked: ${listing.title} on ${formatSlot(slot_iso)} (${email})`
         );
+        scheduleAppendLeadLongTermFacts(lead.id, [
+          `viewing booked: ${listing.title} (${listing.address}) on ${formatSlot(slot_iso)}`,
+          `contact: ${contact_name ?? lead.name ?? '—'} <${email}>`,
+          `listing price: ${formatPrice(listing.price)}`
+        ]);
         return {
           ok: true,
           slot: formatSlot(slot_iso),
@@ -178,6 +206,54 @@ export function buildLeadTools(ctx: AgentContext) {
         }
         await notifyAdmins(`Handoff requested: ${reason}`);
         return { ok: true, handed_off: true };
+      }
+    }),
+
+    remember_visitor_fact: tool({
+      description:
+        'Persist durable visitor facts for future chats: personal identity/contact OR buy/sell/product/pricing preferences. Do not store transient chit-chat.',
+      inputSchema: z.object({
+        facts: z
+          .array(z.string().max(300))
+          .min(1)
+          .max(5)
+          .describe('Short factual bullets, e.g. "Budget: 750k€", "Prefers Marais"')
+      }),
+      execute: async ({ facts }) => {
+        const lead = await ensureLead(ctx);
+        const tag = formatConversationForMemory(ctx.conversation);
+        const tagged = facts.map((f) =>
+          f.includes('[') ? f : `[${tag}] ${f}`
+        );
+        scheduleAppendLeadLongTermFacts(lead.id, tagged, undefined, tag);
+        return { ok: true, stored: tagged.length };
+      }
+    }),
+
+    suggest_telegram_chat: tool({
+      description:
+        'Generate a Telegram deep link so the visitor can continue on mobile in a separate Telegram thread (shared profile, fresh chat history). Web/email only.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        if (ctx.conversation.primary_channel === 'telegram') {
+          return { error: 'already_on_telegram' };
+        }
+        if (!telegramConfigured()) {
+          return { error: 'telegram_not_configured' };
+        }
+        const token = await issueLeadTelegramLinkToken({
+          conversationId: ctx.conversation.id,
+          leadId: ctx.conversation.lead_id,
+          listingId: ctx.conversation.listing_id
+        });
+        const link = await buildLeadTelegramLinkInfo(token);
+        return {
+          ok: true,
+          deep_link: link.deepLink,
+          command: link.command,
+          hint:
+            'Share the deep_link as a clickable URL, or give them the /start command to paste in Telegram if the link fails.'
+        };
       }
     }),
 

@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ChatBubble } from '@/components/chat/chat-bubble';
 import { ChatComposer } from '@/components/chat/chat-composer';
 import { ChatMessageList, ChatShell, ChatTypingIndicator } from '@/components/chat/chat-shell';
+import { addPendingConversationId } from '@/components/chat/pending-conversation-ids';
 import { useLang } from '@/components/lang-provider';
 
 type ToolCall = { toolName?: string };
@@ -22,19 +23,45 @@ type Snapshot = {
 
 export function ChatPanel({
   listingId,
-  greeting
+  greeting,
+  initialConversationId = null,
+  trackForClaim = false,
+  showGreeting = true
 }: {
   listingId: string;
   greeting: string;
+  /** Resume an existing thread (threads page). Listing page omits this. */
+  initialConversationId?: string | null;
+  /** Queue anonymous chats for post-login claim (listing quick chat). */
+  trackForClaim?: boolean;
+  showGreeting?: boolean;
 }) {
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(
+    initialConversationId
+  );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [viewing, setViewing] = useState<Snapshot['viewing']>(null);
   const [mode, setMode] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(Boolean(initialConversationId));
   const scrollRef = useRef<HTMLDivElement>(null);
   const { t } = useLang();
+
+  useEffect(() => {
+    if (!initialConversationId) return;
+    setConversationId(initialConversationId);
+    setLoading(true);
+    fetch(`/api/chat?conversationId=${initialConversationId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setMessages(data.messages ?? []);
+        setMode(data.conversation?.mode ?? null);
+        setViewing(data.viewing ?? null);
+      })
+      .finally(() => setLoading(false));
+  }, [initialConversationId]);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -70,6 +97,7 @@ export function ChatPanel({
       const data = await res.json();
       if (data.conversationId && !conversationId) {
         setConversationId(data.conversationId);
+        if (trackForClaim) addPendingConversationId(data.conversationId);
       }
       if (data.reply) {
         setMessages((m) => [
@@ -109,7 +137,8 @@ export function ChatPanel({
       }
     >
       <ChatMessageList scrollRef={scrollRef}>
-        <ChatBubble role="assistant" content={greeting} />
+        {showGreeting && <ChatBubble role="assistant" content={greeting} />}
+        {loading && <ChatTypingIndicator />}
         {messages.map((m) => (
           <div key={m.id}>
             {Array.isArray(m.tool_calls) && m.tool_calls.length > 0 && (

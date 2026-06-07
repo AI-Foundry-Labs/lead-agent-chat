@@ -11,7 +11,10 @@ import {
 } from '@/lib/db';
 import {
   createTelegramLinkToken,
-  consumeTelegramLinkToken
+  consumeTelegramLinkToken,
+  createLeadTelegramLinkToken,
+  consumeLeadTelegramLinkToken,
+  type LeadTelegramLinkPayload
 } from '@/lib/db';
 
 export const ADMIN_COOKIE = 'admin_session';
@@ -21,6 +24,7 @@ const ADMIN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LEAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAGIC_TTL_MS = 15 * 60 * 1000;
 const TELEGRAM_LINK_TTL_MS = 10 * 60 * 1000;
+const LEAD_TELEGRAM_LINK_TTL_MS = 24 * 60 * 60 * 1000;
 const BCRYPT_ROUNDS = 12;
 
 const isProd = process.env.NODE_ENV === 'production';
@@ -189,6 +193,30 @@ export async function issueTelegramLinkToken(adminId: string): Promise<string> {
 
 export async function consumeTelegramLink(token: string): Promise<string | null> {
   return consumeTelegramLinkToken(sha256(token));
+}
+
+// ─── Lead Telegram linking (visitor /start <token> from site deep link) ─────
+
+export async function issueLeadTelegramLinkToken(input: {
+  conversationId: string;
+  leadId?: string | null;
+  listingId?: string | null;
+}): Promise<string> {
+  const token = newToken();
+  await createLeadTelegramLinkToken({
+    token_hash: sha256(token),
+    conversation_id: input.conversationId,
+    lead_id: input.leadId ?? null,
+    listing_id: input.listingId ?? null,
+    expires_at: new Date(Date.now() + LEAD_TELEGRAM_LINK_TTL_MS)
+  });
+  return token;
+}
+
+export async function consumeLeadTelegramLink(
+  token: string
+): Promise<LeadTelegramLinkPayload | null> {
+  return consumeLeadTelegramLinkToken(sha256(token));
 }
 
 export class AuthError extends Error {

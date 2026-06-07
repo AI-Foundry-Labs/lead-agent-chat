@@ -1,22 +1,23 @@
+import { getVisibleMessages, getActiveViewing } from '@/lib/db';
+import { getLeadIdFromCookies } from '@/lib/auth';
 import {
-  getConversation,
-  getVisibleMessages,
-  getActiveViewing
-} from '@/lib/db';
+  assertLeadChatAccess,
+  toConversationAccessResponse
+} from '@/lib/conversation-access';
 import { subscribeConversation } from '@/lib/events';
 import { formatSlot } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-async function buildSnapshot(conversationId: string) {
-  const [conversation, messages, viewing] = await Promise.all([
-    getConversation(conversationId),
+async function buildSnapshot(conversationId: string, leadId: string | null) {
+  const conversation = await assertLeadChatAccess(conversationId, leadId);
+  const [messages, viewing] = await Promise.all([
     getVisibleMessages(conversationId),
     getActiveViewing(conversationId)
   ]);
   return {
-    mode: conversation?.mode ?? null,
+    mode: conversation.mode ?? null,
     messages: messages.map((m) => ({
       id: m.id,
       role: m.role,
@@ -38,6 +39,15 @@ export async function GET(request: Request) {
   const conversationId = searchParams.get('conversationId');
   if (!conversationId) return new Response('missing conversationId', { status: 400 });
 
+  const leadId = await getLeadIdFromCookies();
+  try {
+    await assertLeadChatAccess(conversationId, leadId);
+  } catch (e) {
+    const res = toConversationAccessResponse(e);
+    if (res) return res;
+    return new Response('error', { status: 500 });
+  }
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
@@ -45,7 +55,7 @@ export async function GET(request: Request) {
       const send = async () => {
         if (closed) return;
         try {
-          const snapshot = await buildSnapshot(conversationId);
+          const snapshot = await buildSnapshot(conversationId, leadId);
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(snapshot)}\n\n`)
           );

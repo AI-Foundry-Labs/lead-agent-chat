@@ -33,6 +33,17 @@ export function DashboardPanel({ data }: { data: AdminData | null }) {
       <LeadGroup title={t.dash_booked} leads={by('booked')} lang={lang} />
       <LeadGroup title={t.dash_qualified} leads={by('qualified')} lang={lang} />
       <LeadGroup title={t.dash_active} leads={by('active')} lang={lang} />
+
+      {data.anonymous.thread_count > 0 && (
+        <AdminSection title={`${t.agent_anonymous_title} (${data.anonymous.thread_count})`}>
+          <p className="text-sm text-muted-foreground">
+            {data.anonymous.thread_count} {t.agent_threads_label}
+            {data.anonymous.handoff_count > 0
+              ? ` · ${data.anonymous.handoff_count} handoff`
+              : ''}
+          </p>
+        </AdminSection>
+      )}
     </div>
   );
 }

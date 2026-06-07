@@ -7,6 +7,7 @@ import type {
   LeadStatus,
   PotentialStatus
 } from '@/lib/types';
+import { isIdentifiedLead } from '@/lib/leads/is-identified-lead';
 
 function rowToLead(r: typeof leads.$inferSelect): Lead {
   return {
@@ -20,6 +21,8 @@ function rowToLead(r: typeof leads.$inferSelect): Lead {
     qual_values: r.qual_values ?? {},
     potential_status: (r.potential_status as PotentialStatus | null) ?? null,
     score_reason: r.score_reason,
+    long_term_memory: r.long_term_memory,
+    telegram_user_id: r.telegram_user_id,
     created_at: r.created_at,
     updated_at: r.updated_at
   };
@@ -51,6 +54,11 @@ export async function listLeadsByStatus(status: LeadStatus): Promise<Lead[]> {
     .where(eq(leads.status, status))
     .orderBy(desc(leads.updated_at));
   return rows.map(rowToLead);
+}
+
+export async function listIdentifiedLeads(): Promise<Lead[]> {
+  const rows = await db.select().from(leads).orderBy(desc(leads.updated_at));
+  return rows.map(rowToLead).filter(isIdentifiedLead);
 }
 
 export async function createLead(input: {
@@ -86,6 +94,8 @@ export async function updateLead(
     qual_values: Record<string, string>;
     potential_status: PotentialStatus | null;
     score_reason: string | null;
+    long_term_memory: string | null;
+    telegram_user_id: string | null;
   }>
 ): Promise<Lead> {
   const [r] = await db

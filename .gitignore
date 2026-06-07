@@ -53,4 +53,7 @@ next-env.d.ts
 # github actions self-hosted runner
 /actions-runner/
 
+# uploaded listing images (local dev)
+/public/uploads/
+
 .claude/

@@ -16,14 +16,27 @@ import { dispatchReply } from '@/lib/dispatch';
 import { notifyAdmins } from '@/lib/notify';
 import { matchRule } from '@/lib/agent/rules';
 import { buildLeadSystemPrompt, buildAdminSystemPrompt } from '@/lib/agent/prompts';
+import {
+  buildLeadStewardSystemPrompt,
+  buildAnonymousStewardSystemPrompt
+} from '@/lib/agent/prompts/steward-prompts';
+import { buildCrossThreadContextBlock } from '@/lib/agent/cross-thread-context';
+import {
+  buildThreadContextMessages,
+  scheduleThreadMemorySummarize
+} from '@/lib/agent/thread-memory';
 import { buildLeadTools } from '@/lib/agent/tools/lead-tools';
 import { buildAdminTools } from '@/lib/agent/tools/admin-tools';
+import { buildLeadStewardTools } from '@/lib/agent/tools/lead-steward-tools';
+import { buildAnonymousStewardTools } from '@/lib/agent/tools/anonymous-steward-tools';
 import type { AgentContext } from '@/lib/agent/tools/context';
 import type { Conversation, Language } from '@/lib/types';
 
 export type Actor =
   | { type: 'lead' }
-  | { type: 'admin'; adminId: string; adminName: string | null };
+  | { type: 'admin'; adminId: string; adminName: string | null }
+  | { type: 'lead_steward'; leadId: string; adminId: string; adminName: string | null }
+  | { type: 'anonymous_steward'; adminId: string; adminName: string | null };
 
 export type TurnStatus = 'replied' | 'manual' | 'handoff';
 
@@ -34,6 +47,12 @@ export interface TurnResult {
 }
 
 const MAX_STEPS = 6;
+
+function shouldDispatchReply(conversation: Conversation): boolean {
+  if (conversation.type === 'lead') return true;
+  if (conversation.type === 'admin_assistant') return true;
+  return false;
+}
 
 // Build the model transcript from stored messages. From the lead's perspective an
 // admin takeover message reads as an assistant turn.
@@ -100,17 +119,51 @@ export async function runAgentTurn(
   if (actor.type === 'admin') {
     system = buildAdminSystemPrompt({ config, adminName: actor.adminName });
     tools = buildAdminTools(ctx);
+  } else if (actor.type === 'lead_steward') {
+    const lead = await getLeadById(actor.leadId);
+    if (!lead) throw new Error('lead_not_found');
+    system = await buildLeadStewardSystemPrompt({
+      config,
+      lead,
+      adminName: actor.adminName,
+      lang
+    });
+    tools = buildLeadStewardTools(ctx, actor.leadId);
+  } else if (actor.type === 'anonymous_steward') {
+    system = await buildAnonymousStewardSystemPrompt({
+      config,
+      adminName: actor.adminName,
+      lang
+    });
+    tools = buildAnonymousStewardTools(ctx);
   } else {
     const listing = await getListing(conversation.listing_id);
     const lead = conversation.lead_id
       ? await getLeadById(conversation.lead_id)
       : null;
-    system = buildLeadSystemPrompt({ config, listing, lead, lang });
+    const crossThreadContext =
+      lead != null
+        ? await buildCrossThreadContextBlock({
+            leadId: lead.id,
+            currentConversationId: conversationId,
+            lang
+          })
+        : '';
+    system = buildLeadSystemPrompt({
+      config,
+      listing,
+      lead,
+      lang,
+      channel: conversation.primary_channel,
+      crossThreadContext
+    });
     tools = buildLeadTools(ctx);
   }
 
-  const history = await getVisibleMessages(conversationId);
-  const messages = toModelMessages(history);
+  const messages =
+    actor.type === 'lead'
+      ? await buildThreadContextMessages(conversationId)
+      : toModelMessages(await getVisibleMessages(conversationId));
 
   const result = await generateText({
     model: MODEL,
@@ -131,9 +184,14 @@ export async function runAgentTurn(
     tool_results: toolResults.length ? toolResults : null
   });
 
-  // ctx.conversation may have been mutated by a tool (lead attach, handoff).
   broadcastConversationUpdate(conversationId);
-  await dispatchReply(ctx.conversation, result.text);
+  if (shouldDispatchReply(ctx.conversation)) {
+    await dispatchReply(ctx.conversation, result.text);
+  }
+
+  if (actor.type === 'lead') {
+    scheduleThreadMemorySummarize(conversationId);
+  }
 
   return { conversation: ctx.conversation, reply: result.text, status: 'replied' };
 }

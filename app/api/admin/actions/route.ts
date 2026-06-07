@@ -1,7 +1,13 @@
 import {
-  getConversationByLeadId,
+  getConversation,
   updateConversation,
-  addMessage,
+  addMessage
+} from '@/lib/db';
+import { requireAdmin, toAuthResponse } from '@/lib/auth';
+import { dispatchReply } from '@/lib/dispatch';
+import { broadcastConversationUpdate } from '@/lib/events';
+import { listingSchema, listingUpdateSchema, criterionSchema } from '@/lib/types';
+import {
   createListing,
   updateListing,
   deleteListing,
@@ -10,15 +16,16 @@ import {
   toggleHandoffRule,
   deleteHandoffRule
 } from '@/lib/db';
-import { requireAdmin, toAuthResponse } from '@/lib/auth';
-import { dispatchReply } from '@/lib/dispatch';
-import { broadcastConversationUpdate } from '@/lib/events';
-import { listingSchema, listingUpdateSchema, criterionSchema } from '@/lib/types';
 import { z } from 'zod';
 
 export const runtime = 'nodejs';
 
-// Single dispatcher for every admin mutation (takeover, manual reply, config CRUD).
+async function resolveVisitorThread(conversationId: string) {
+  const conv = await getConversation(conversationId);
+  if (!conv || conv.type !== 'lead') return null;
+  return conv;
+}
+
 export async function POST(req: Request) {
   try {
     await requireAdmin();
@@ -27,14 +34,18 @@ export async function POST(req: Request) {
 
     switch (kind) {
       case 'takeover': {
-        const conv = await getConversationByLeadId(String(body.lead_id));
+        const conv = body.conversation_id
+          ? await resolveVisitorThread(String(body.conversation_id))
+          : null;
         if (!conv) return notFound();
         await updateConversation(conv.id, { mode: 'manual' });
         broadcastConversationUpdate(conv.id);
         return ok();
       }
       case 'release': {
-        const conv = await getConversationByLeadId(String(body.lead_id));
+        const conv = body.conversation_id
+          ? await resolveVisitorThread(String(body.conversation_id))
+          : null;
         if (!conv) return notFound();
         await updateConversation(conv.id, { mode: 'agent' });
         broadcastConversationUpdate(conv.id);
@@ -42,7 +53,9 @@ export async function POST(req: Request) {
       }
       case 'send_reply': {
         const content = z.string().min(1).parse(body.content);
-        const conv = await getConversationByLeadId(String(body.lead_id));
+        const conv = body.conversation_id
+          ? await resolveVisitorThread(String(body.conversation_id))
+          : null;
         if (!conv) return notFound();
         await addMessage({ conversation_id: conv.id, role: 'admin', content });
         await dispatchReply(conv, content);

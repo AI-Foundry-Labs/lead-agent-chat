@@ -26,17 +26,15 @@ export async function sendEmail(args: {
   ensureConfigured();
   const from = process.env.SENDGRID_FROM_EMAIL;
   if (!process.env.SENDGRID_API_KEY || !from) {
-    console.warn('[email] Sendgrid not configured — would send:', {
-      to: args.to,
-      subject: args.subject,
-      text: args.text
-    });
-    return;
+    throw new Error('email_not_configured');
   }
   try {
     await sgMail.send({
       to: args.to,
-      from,
+      from: {
+        email: from,
+        name: process.env.SENDGRID_FROM_NAME ?? 'Agence Lumière'
+      },
       subject: args.subject,
       text: args.text,
       ...(args.html ? { html: args.html } : {})
@@ -44,14 +42,10 @@ export async function sendEmail(args: {
   } catch (e: unknown) {
     const err = e as { code?: number; response?: { body?: unknown } };
     console.error(
-      `[email] Sendgrid send failed (code ${err.code ?? '?'}). Falling back to log.`,
+      `[email] Sendgrid send failed (code ${err.code ?? '?'}).`,
       err.response?.body ?? ''
     );
-    console.warn('[email] Would have sent:', {
-      to: args.to,
-      subject: args.subject,
-      text: args.text
-    });
+    throw new Error('email_send_failed');
   }
 }
 
@@ -66,18 +60,18 @@ export function buildMagicLinkEmail(opts: {
       : `Hello${opts.name ? ' ' + opts.name : ''},`;
   const intro =
     opts.lang === 'fr'
-      ? 'Cliquez sur le lien ci-dessous pour reprendre votre conversation avec AI Foundry Labs :'
-      : 'Click the link below to continue your conversation with AI Foundry Labs:';
+      ? 'Cliquez sur le lien ci-dessous pour vous connecter à Agence Lumière :'
+      : 'Click the link below to log in to Agence Lumière:';
   const cta =
-    opts.lang === 'fr' ? 'Reprendre la conversation' : 'Continue your conversation';
+    opts.lang === 'fr' ? 'Se connecter' : 'Log in';
   const expiry =
     opts.lang === 'fr'
       ? 'Ce lien expire dans 15 minutes et ne peut être utilisé qu\'une seule fois.'
       : 'This link expires in 15 minutes and can only be used once.';
   const subject =
     opts.lang === 'fr'
-      ? 'Reprenez votre conversation avec AI Foundry Labs'
-      : 'Continue your conversation with AI Foundry Labs';
+      ? 'Votre lien de connexion Agence Lumière'
+      : 'Your Agence Lumière login link';
 
   const text = `${greeting}\n\n${intro}\n\n${opts.url}\n\n${expiry}\n`;
   const html = `

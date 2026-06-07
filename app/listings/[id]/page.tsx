@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { getListingById } from '@/lib/db';
 import { ChatPanel } from '@/components/chat/chat-panel';
-import { LeadLogin } from '@/components/chat/lead-login';
 import {
   ListingFeaturesList,
   ListingHeroImage,
@@ -35,7 +34,7 @@ export default async function ListingPage({
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 sm:py-10">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-6">
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
@@ -43,7 +42,6 @@ export default async function ListingPage({
           <ChevronLeft className="size-4" aria-hidden />
           {t.back_all.replace('← ', '')}
         </Link>
-        <LeadLogin prominent />
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-10">
@@ -65,7 +63,11 @@ export default async function ListingPage({
         </article>
 
         <aside className="lg:sticky lg:top-20 lg:self-start animate-fade-up-delay-1">
-          <ChatPanel listingId={listing.id} greeting={greeting} />
+          <ChatPanel
+            listingId={listing.id}
+            greeting={greeting}
+            trackForClaim
+          />
         </aside>
       </div>
     </main>

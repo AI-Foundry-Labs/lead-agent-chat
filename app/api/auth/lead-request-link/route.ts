@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { promises as dns } from 'node:dns';
 import { getLeadByEmail, createLead } from '@/lib/db';
-import { createMagicLink } from '@/lib/auth';
+import { createMagicLink, destroyLeadSession } from '@/lib/auth';
 import { sendEmail, buildMagicLinkEmail } from '@/lib/email';
 
 export const runtime = 'nodejs';
@@ -10,23 +11,59 @@ const schema = z.object({
   lang: z.enum(['fr', 'en']).optional()
 });
 
+async function emailDomainAcceptsMail(email: string): Promise<boolean> {
+  const domain = email.split('@')[1];
+  if (!domain) return false;
+  try {
+    const mx = await dns.resolveMx(domain);
+    if (mx.length > 0) return true;
+  } catch {
+    // Some valid domains have no MX but accept mail on A/AAAA records.
+  }
+  try {
+    const [a, aaaa] = await Promise.allSettled([
+      dns.resolve4(domain),
+      dns.resolve6(domain)
+    ]);
+    return (
+      (a.status === 'fulfilled' && a.value.length > 0) ||
+      (aaaa.status === 'fulfilled' && aaaa.value.length > 0)
+    );
+  } catch {
+    return false;
+  }
+}
+
 // A visitor logs in with their email. We find or create their lead, issue a
-// single-use magic link, and email it. In dev (no Sendgrid) the link is returned
-// in the response so the flow is testable without a mail provider.
+// single-use magic link, and email it. The link is never returned to the client.
 export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return Response.json({ ok: true });
+  if (!parsed.success) {
+    return Response.json({ error: 'invalid_email' }, { status: 400 });
+  }
 
   const email = parsed.data.email.toLowerCase();
   const lang = parsed.data.lang ?? 'fr';
+  if (!(await emailDomainAcceptsMail(email))) {
+    return Response.json({ error: 'invalid_email' }, { status: 400 });
+  }
 
   let lead = await getLeadByEmail(email);
   if (!lead) lead = await createLead({ channel: 'web', email });
 
   const url = await createMagicLink(lead.id, email);
   const { subject, text, html } = buildMagicLinkEmail({ name: lead.name, url, lang });
-  await sendEmail({ to: email, subject, text, html });
+  try {
+    await sendEmail({ to: email, subject, text, html });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'email_send_failed';
+    const status = msg === 'email_not_configured' ? 503 : 502;
+    return Response.json({ error: msg }, { status });
+  }
 
-  const devMode = !process.env.SENDGRID_API_KEY;
-  return Response.json({ ok: true, ...(devMode ? { dev_link: url } : {}) });
+  // Requesting a magic link must not keep or create an authenticated browser
+  // session. The visitor becomes logged in only after clicking the email link.
+  await destroyLeadSession();
+
+  return Response.json({ ok: true });
 }

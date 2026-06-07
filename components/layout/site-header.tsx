@@ -1,9 +1,16 @@
+'use client';
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { LangToggle } from '@/components/lang-toggle';
+import { LeadAuthNav } from '@/components/layout/lead-auth-nav';
 import { getDict, type Lang } from '@/lib/i18n';
 
 export function SiteHeader({ lang }: { lang: Lang }) {
+  const pathname = usePathname();
   const t = getDict(lang);
+
+  if (pathname.startsWith('/admin')) return null;
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/80 bg-background/85 backdrop-blur-md">
@@ -25,12 +32,7 @@ export function SiteHeader({ lang }: { lang: Lang }) {
           >
             {t.nav_listings}
           </Link>
-          <Link
-            href="/admin"
-            className="hidden rounded-md px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground sm:inline-block"
-          >
-            {t.admin_space}
-          </Link>
+          <LeadAuthNav />
           <LangToggle />
         </nav>
       </div>

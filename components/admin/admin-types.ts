@@ -11,11 +11,24 @@ export type AdminLead = {
   reason: string | null;
   qual_values: Record<string, string>;
   booked_slot: string | null;
+  thread_count: number;
+  updated_at: string;
+};
+
+export type AdminThread = {
+  id: string;
+  lead_id?: string | null;
+  channel: string;
+  listing_id: string | null;
+  listing_title: string | null;
+  mode: string;
+  thread_summary: string | null;
   updated_at: string;
 };
 
 export type AdminData = {
   leads: AdminLead[];
+  anonymous: { thread_count: number; handoff_count: number };
   listings: Listing[];
   criteria: Criterion[];
   config: { name: string; tone: string } | null;

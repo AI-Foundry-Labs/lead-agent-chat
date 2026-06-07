@@ -2,12 +2,15 @@ import { type NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
   createConversation,
-  getConversation,
   getVisibleMessages,
   getActiveViewing,
   updateConversation
 } from '@/lib/db';
 import { getLeadIdFromCookies } from '@/lib/auth';
+import {
+  assertLeadChatAccess,
+  toConversationAccessResponse
+} from '@/lib/conversation-access';
 import { runAgentTurn } from '@/lib/agent/run';
 import { getLang } from '@/lib/i18n-server';
 import { formatSlot } from '@/lib/format';
@@ -25,8 +28,13 @@ const postSchema = z.object({
 export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get('conversationId');
   if (!id) return Response.json({ error: 'conversationId required' }, { status: 400 });
-  const conversation = await getConversation(id);
-  if (!conversation) return Response.json({ error: 'not_found' }, { status: 404 });
+  const leadId = await getLeadIdFromCookies();
+  let conversation;
+  try {
+    conversation = await assertLeadChatAccess(id, leadId);
+  } catch (e) {
+    return toConversationAccessResponse(e) ?? Response.json({ error: 'error' }, { status: 500 });
+  }
   const messages = await getVisibleMessages(id);
   const viewing = await getActiveViewing(id);
   return Response.json({
@@ -61,7 +69,14 @@ export async function POST(req: NextRequest) {
   const { conversationId, listingId, message } = parsed.data;
   const leadId = await getLeadIdFromCookies();
 
-  let conv = conversationId ? await getConversation(conversationId) : null;
+  let conv = null;
+  if (conversationId) {
+    try {
+      conv = await assertLeadChatAccess(conversationId, leadId);
+    } catch (e) {
+      return toConversationAccessResponse(e) ?? Response.json({ error: 'error' }, { status: 500 });
+    }
+  }
   if (!conv) {
     conv = await createConversation({
       type: 'lead',

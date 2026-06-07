@@ -12,7 +12,11 @@ export type LeadStatus =
   | 'handoff'
   | 'abandoned';
 export type PotentialStatus = 'hot' | 'warm' | 'cold';
-export type ConversationType = 'lead' | 'admin_assistant';
+export type ConversationType =
+  | 'lead'
+  | 'lead_steward'
+  | 'anonymous_steward'
+  | 'admin_assistant';
 export type ConversationMode = 'agent' | 'manual';
 export type MessageRole = 'user' | 'assistant' | 'admin' | 'tool';
 export type ViewingStatus = 'proposed' | 'booked' | 'cancelled';
@@ -25,6 +29,8 @@ export interface Conversation {
   listing_id: string | null;
   primary_channel: Channel;
   mode: ConversationMode;
+  thread_summary: string | null;
+  summarized_turn_count: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -51,6 +57,8 @@ export interface Lead {
   qual_values: Record<string, string>;
   potential_status: PotentialStatus | null;
   score_reason: string | null;
+  long_term_memory: string | null;
+  telegram_user_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -135,7 +143,13 @@ export const listingSchema = z.object({
   description_en: z.string().min(1),
   key_features: z.array(z.string().min(1)),
   key_features_en: z.array(z.string().min(1)),
-  image_url: z.string().url().max(1000).nullable().optional(),
+  image_url: z
+    .union([
+      z.string().url().max(1000),
+      z.string().regex(/^\/uploads\/listings\/[a-zA-Z0-9-]+\.(jpg|jpeg|png|webp)$/)
+    ])
+    .nullable()
+    .optional(),
   agent_name: z.string().min(1).max(255),
   agent_email: z.string().email().max(255),
   agent_calendar_id: z.string().min(1).max(255)

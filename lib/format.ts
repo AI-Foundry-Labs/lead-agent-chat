@@ -6,6 +6,17 @@ export function formatPrice(p: number, lang: 'fr' | 'en' = 'en'): string {
   }).format(p);
 }
 
+export function formatThreadDate(iso: string, lang: 'fr' | 'en' = 'fr'): string {
+  return new Date(iso).toLocaleString(lang === 'fr' ? 'fr-FR' : 'en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Paris'
+  });
+}
+
 export function formatSlot(iso: string, lang: 'fr' | 'en' = 'fr'): string {
   return new Date(iso).toLocaleString(lang === 'fr' ? 'fr-FR' : 'en-GB', {
     weekday: 'long',

@@ -27,6 +27,14 @@ export async function dispatchReply(
     }
   }
 
+  if (conversation.type === 'lead' && conversation.primary_channel === 'telegram') {
+    const lead = conversation.lead_id
+      ? await getLeadById(conversation.lead_id)
+      : null;
+    const chatId = lead?.telegram_user_id;
+    if (chatId) await sendTelegramMessage(chatId, content);
+  }
+
   // Admin assistant is dual-client: also push to the admin's Telegram chat.
   if (conversation.type === 'admin_assistant' && conversation.admin_id) {
     const rows = await db

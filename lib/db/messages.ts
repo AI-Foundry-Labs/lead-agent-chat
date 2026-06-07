@@ -63,6 +63,23 @@ export async function addMessage(input: {
   return rowToMessage(r);
 }
 
+export async function getLastVisibleMessage(
+  conversationId: string
+): Promise<Message | null> {
+  const rows = await db
+    .select()
+    .from(messages)
+    .where(
+      and(
+        eq(messages.conversation_id, conversationId),
+        eq(messages.is_draft, false)
+      )
+    )
+    .orderBy(desc(messages.timestamp))
+    .limit(1);
+  return rows[0] ? rowToMessage(rows[0]) : null;
+}
+
 export async function getLatestDraft(
   conversationId: string
 ): Promise<Message | null> {

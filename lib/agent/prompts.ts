@@ -36,13 +36,66 @@ Still needed: ${missing.length ? missing.join(', ') : 'nothing — all criteria 
 Current potential: ${lead?.potential_status ?? 'unscored'}`;
 }
 
+function longTermMemoryBlock(lead: Lead | null): string {
+  const memory = lead?.long_term_memory?.trim();
+  if (!memory) return '';
+  return `[VISITOR LONG-TERM MEMORY — unified across ALL threads/channels]
+Structured profile linking identity, product preferences, and per-thread notes.
+Use to personalize, avoid re-asking known facts, and connect web vs Telegram sessions.
+${memory}`;
+}
+
+function channelBlock(channel: string, lead: Lead | null): string {
+  const onTelegram = channel === 'telegram';
+  const linked = !!lead?.telegram_user_id;
+  if (onTelegram) {
+    return `[CHANNEL — TELEGRAM]
+This is a SEPARATE chat session from the website (different message history).
+Qualification values and long-term memory are shared; do not claim you remember
+website messages verbatim — use long-term memory and other-thread summaries instead.
+The visitor linked Telegram via a verification token from the site.
+If they want another property, tell them to open a new link from that listing's page on the site.`;
+  }
+  return `[CHANNEL — WEB]
+You may offer Telegram as a convenient second channel via suggest_telegram_chat
+(when they want mobile chat or ask about Telegram). That opens a NEW Telegram thread
+for the same listing — shared profile, fresh chat history there.
+${linked ? 'Telegram is already linked for this visitor.' : 'Telegram not linked yet.'}`;
+}
+
+function visitorIdentityBlock(lead: Lead | null): string {
+  const email = lead?.email?.trim();
+  if (email) {
+    return `[VISITOR IDENTITY]
+The visitor is identified (logged in or contact already captured).
+Email: ${email}
+Name: ${lead?.name ?? 'not provided'}
+Do not ask for their email again unless booking fails for another reason.`;
+  }
+
+  return `[VISITOR IDENTITY]
+The visitor is ANONYMOUS — no email or name on file yet.
+
+CONTACT CAPTURE — HIGH PRIORITY:
+- After answering their first question (or within the first 2–3 turns), naturally ask
+  for their name and email so the agency can follow up and confirm viewings.
+- If they show interest in visiting, ask for contact details before proposing slots.
+- They can also use "Log in" in the site header (/login — Google or email magic link).
+- Never block helpful answers about the property — weave contact capture in warmly
+  after being useful, not as an interrogation.
+- book_viewing REQUIRES an email; if missing, ask inline or point them to header login.`;
+}
+
 export function buildLeadSystemPrompt(args: {
   config: AgencyConfig;
   listing: Listing | null;
   lead: Lead | null;
   lang?: Language;
+  channel?: string;
+  crossThreadContext?: string;
 }): string {
-  const { config, listing, lead } = args;
+  const { config, listing, lead, crossThreadContext } = args;
+  const channel = args.channel ?? 'web';
   const lang: Language = args.lang ?? 'fr';
   const defaultLang = lang === 'en' ? 'English' : 'French';
   return `[CRITICAL — LANGUAGE]
@@ -69,6 +122,14 @@ ${config.tone}
 
 ${listingBlock(listing, lang)}
 
+${channelBlock(channel, lead)}
+
+${visitorIdentityBlock(lead)}
+
+${longTermMemoryBlock(lead)}
+
+${crossThreadContext ?? ''}
+
 ${criteriaBlock(config, lead)}
 
 [TOOLS — how to act]
@@ -79,6 +140,11 @@ ${criteriaBlock(config, lead)}
 - When the visitor wants to visit, call get_available_slots, present the options in
   chat, and on their choice call book_viewing(slot_iso, contact). Booking REQUIRES a
   contact email — if you don't have one, ask for it (or invite them to log in) first.
+- Use remember_visitor_fact when you learn NEW personal info or lasting buy/sell/product
+  preferences worth recalling in a future chat (not every message). Prefix facts with
+  channel/thread context when relevant, e.g. "[web · marais] Budget: 800k€".
+- On web/email only: use suggest_telegram_chat when they want mobile/Telegram chat —
+  share the deep link warmly (one sentence + link). They can also paste /start <code> manually.
 - Use notify_admin for anything a human should know; request_handoff to escalate.
 
 [RULES]
@@ -110,7 +176,7 @@ ${criteria}
 - query_leads to list/search leads by status, potential, listing, or recency.
 - get_conversation to read a lead's full thread and qualification state.
 - draft_reply to compose a reply for review; send_reply to actually send one to the
-  lead on their channel (web/email). takeover_conversation to switch a lead to manual
+  lead on their channel (web/email/telegram). takeover_conversation to switch a lead to manual
   mode (the lead-facing agent stops auto-replying until released).
 - update_criteria to change the qualification criteria in natural language;
   update_config to adjust tone/name. Changes take effect on the next lead turn.

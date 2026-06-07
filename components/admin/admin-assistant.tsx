@@ -46,16 +46,6 @@ export function AdminAssistant() {
   }, [router]);
 
   useEffect(() => {
-    if (!conversationId) return;
-    const es = new EventSource(`/api/chat/stream?conversationId=${conversationId}`);
-    es.onmessage = (e) => {
-      const snap = JSON.parse(e.data);
-      if (snap.messages) setMessages(snap.messages);
-    };
-    return () => es.close();
-  }, [conversationId]);
-
-  useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, sending]);
 
@@ -66,11 +56,28 @@ export function AdminAssistant() {
     setSending(true);
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: 'user', content: text }]);
     try {
-      await fetch('/api/admin/chat', {
+      const res = await fetch('/api/admin/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text })
       });
+      if (res.status === 401) {
+        router.push('/admin/login');
+        router.refresh();
+        return;
+      }
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) throw new Error('admin_chat_failed');
+      if (data.conversationId) setConversationId(data.conversationId);
+      if (data.messages) setMessages(data.messages);
+      else if (data.reply) {
+        setMessages((m) => [
+          ...m.filter((msg) => !msg.id.startsWith('tmp-')),
+          { id: `reply-${Date.now()}`, role: 'assistant', content: data.reply }
+        ]);
+      }
+    } catch {
+      setLoadError('chat_load_failed');
     } finally {
       setSending(false);
     }

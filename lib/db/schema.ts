@@ -19,7 +19,7 @@ export const conversations = pgTable(
   'conversations',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    type: varchar('type', { length: 20 }).notNull(), // 'lead' | 'admin_assistant'
+    type: varchar('type', { length: 24 }).notNull(), // lead | lead_steward | anonymous_steward | admin_assistant
     lead_id: uuid('lead_id'), // null while anonymous
     admin_id: uuid('admin_id'), // set for admin_assistant
     listing_id: varchar('listing_id', { length: 50 }), // the property under discussion
@@ -27,6 +27,9 @@ export const conversations = pgTable(
       .default('web')
       .notNull(), // 'web' | 'email' | 'telegram'
     mode: varchar('mode', { length: 10 }).default('agent').notNull(), // 'agent' | 'manual'
+    // Short-term memory: rolled summary of older turns in this thread (see lib/agent/thread-memory.ts).
+    thread_summary: text('thread_summary'),
+    summarized_turn_count: integer('summarized_turn_count').default(0).notNull(),
     created_at: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -79,6 +82,10 @@ export const leads = pgTable('leads', {
     .notNull(),
   potential_status: varchar('potential_status', { length: 10 }), // 'hot' | 'warm' | 'cold'
   score_reason: text('score_reason'),
+  // Cross-thread visitor memory (modest cap enforced in app layer).
+  long_term_memory: text('long_term_memory'),
+  // Set when the visitor links Telegram via /start <token> from the site.
+  telegram_user_id: varchar('telegram_user_id', { length: 50 }),
   created_at: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -219,6 +226,28 @@ export const lead_magic_links = pgTable(
   (t) => ({
     lead_idx: index('lead_magic_links_lead_idx').on(t.lead_id),
     expires_idx: index('lead_magic_links_expires_idx').on(t.expires_at)
+  })
+);
+
+// ─── Lead Telegram link tokens (visitor /start <token> from site deep link) ──
+export const lead_telegram_link_tokens = pgTable(
+  'lead_telegram_link_tokens',
+  {
+    token_hash: varchar('token_hash', { length: 64 }).primaryKey(),
+    conversation_id: uuid('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    lead_id: uuid('lead_id').references(() => leads.id, { onDelete: 'cascade' }),
+    listing_id: varchar('listing_id', { length: 50 }),
+    created_at: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    expires_at: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumed_at: timestamp('consumed_at', { withTimezone: true })
+  },
+  (t) => ({
+    conv_idx: index('lead_telegram_link_tokens_conv_idx').on(t.conversation_id),
+    expires_idx: index('lead_telegram_link_tokens_expires_idx').on(t.expires_at)
   })
 );
 

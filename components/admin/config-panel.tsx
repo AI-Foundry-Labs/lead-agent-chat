@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useLang } from '@/components/lang-provider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,42 +24,6 @@ export function ConfigPanel({
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [ruleDesc, setRuleDesc] = useState('');
   const [ruleKw, setRuleKw] = useState('');
-  const emptyListing = {
-    id: '',
-    title: '',
-    address: '',
-    price: '',
-    rooms: '',
-    surface_m2: '',
-    image_url: ''
-  };
-  const [nl, setNl] = useState(emptyListing);
-
-  async function addListing() {
-    if (!nl.id || !nl.title) return;
-    const listing = {
-      id: nl.id,
-      title: nl.title,
-      title_en: nl.title,
-      address: nl.address || '—',
-      price: Number(nl.price) || 0,
-      surface_m2: Number(nl.surface_m2) || 1,
-      rooms: Number(nl.rooms) || 1,
-      floor: 'RDC',
-      floor_en: 'Ground floor',
-      description: nl.title,
-      description_en: nl.title,
-      key_features: [],
-      key_features_en: [],
-      image_url: nl.image_url || null,
-      agent_name: 'Agence Lumière',
-      agent_email: 'contact@agence-lumiere.fr',
-      agent_calendar_id: 'primary'
-    };
-    await adminAction({ kind: 'create_listing', listing });
-    setNl(emptyListing);
-    onChanged();
-  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -98,11 +63,12 @@ export function ConfigPanel({
                 className={cn(inputClass, 'min-w-[12rem] flex-1')}
               />
               <Button
-                size="sm"
+                size="icon-sm"
                 variant="ghost"
+                aria-label={t.cfg_delete}
                 onClick={() => setCriteria((cs) => cs.filter((_, j) => j !== i))}
               >
-                ✕
+                <Trash2 className="size-4" aria-hidden />
               </Button>
             </div>
           ))}
@@ -115,7 +81,8 @@ export function ConfigPanel({
               setCriteria((c) => [...c, { key: '', label: '', hint: '' }])
             }
           >
-            + {t.cfg_add}
+            <Plus className="size-4" aria-hidden />
+            {t.cfg_add}
           </Button>
           <Button
             size="sm"
@@ -158,14 +125,15 @@ export function ConfigPanel({
                   {t.cfg_active}: {r.active ? 'on' : 'off'}
                 </Badge>
                 <Button
-                  size="sm"
+                  size="icon-sm"
                   variant="ghost"
+                  aria-label={t.cfg_delete}
                   onClick={async () => {
                     await adminAction({ kind: 'delete_rule', id: r.id });
                     onChanged();
                   }}
                 >
-                  ✕
+                  <Trash2 className="size-4" aria-hidden />
                 </Button>
               </div>
             </div>
@@ -199,42 +167,12 @@ export function ConfigPanel({
               onChanged();
             }}
           >
-            + {t.cfg_add}
+            <Plus className="size-4" aria-hidden />
+            {t.cfg_add}
           </Button>
         </div>
       </AdminSection>
 
-      <AdminSection title={t.cfg_listings}>
-        <div className="divide-y divide-border/80 overflow-hidden rounded-xl border border-border/80 bg-card">
-          {data.listings.map((l) => (
-            <div key={l.id} className="flex items-center justify-between gap-2 px-4 py-3 text-sm">
-              <span className="min-w-0 truncate">
-                {l.title} <span className="text-muted-foreground">· {l.id}</span>
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={async () => {
-                  await adminAction({ kind: 'delete_listing', id: l.id });
-                  onChanged();
-                }}
-              >
-                {t.cfg_delete}
-              </Button>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <input value={nl.id} onChange={(e) => setNl({ ...nl, id: e.target.value })} placeholder="id (slug)" className={cn(inputClass, 'w-32')} />
-          <input value={nl.title} onChange={(e) => setNl({ ...nl, title: e.target.value })} placeholder="Titre" className={cn(inputClass, 'w-48')} />
-          <input value={nl.address} onChange={(e) => setNl({ ...nl, address: e.target.value })} placeholder="Adresse" className={cn(inputClass, 'w-48')} />
-          <input value={nl.price} onChange={(e) => setNl({ ...nl, price: e.target.value })} placeholder="Prix €" className={cn(inputClass, 'w-24')} />
-          <input value={nl.rooms} onChange={(e) => setNl({ ...nl, rooms: e.target.value })} placeholder="Pièces" className={cn(inputClass, 'w-20')} />
-          <input value={nl.surface_m2} onChange={(e) => setNl({ ...nl, surface_m2: e.target.value })} placeholder="m²" className={cn(inputClass, 'w-20')} />
-          <input value={nl.image_url} onChange={(e) => setNl({ ...nl, image_url: e.target.value })} placeholder="image URL" className={cn(inputClass, 'w-48')} />
-          <Button size="sm" className="bg-brand text-brand-foreground hover:bg-brand/90" onClick={() => void addListing()}>+ {t.cfg_add}</Button>
-        </div>
-      </AdminSection>
     </div>
   );
 }

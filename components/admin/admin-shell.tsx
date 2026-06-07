@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useLang } from '@/components/lang-provider';
 import { Button } from '@/components/ui/button';
 import { AdminTabNav } from '@/components/admin/admin-tab-nav';
-import { AdminAssistant } from '@/components/admin/admin-assistant';
+import { AgentsPanel } from '@/components/admin/agents-panel';
 import { DashboardPanel } from '@/components/admin/dashboard-panel';
 import { ConversationsPanel } from '@/components/admin/conversations-panel';
+import { ListingsPanel } from '@/components/admin/listings-panel';
 import { ConfigPanel } from '@/components/admin/config-panel';
 import type { AdminData } from '@/components/admin/admin-types';
 
-type Tab = 'assistant' | 'dashboard' | 'conversations' | 'config';
+type Tab = 'agents' | 'dashboard' | 'conversations' | 'listings' | 'config';
 
 export function AdminShell() {
   const { t } = useLang();
@@ -51,9 +52,10 @@ export function AdminShell() {
   }
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'assistant', label: t.tab_assistant },
+    { key: 'agents', label: t.tab_agents },
     { key: 'dashboard', label: t.tab_dashboard },
     { key: 'conversations', label: t.tab_conversations },
+    { key: 'listings', label: t.tab_listings },
     { key: 'config', label: t.tab_config }
   ];
 
@@ -79,11 +81,12 @@ export function AdminShell() {
         </div>
       )}
 
-      {tab === 'assistant' && <AdminAssistant />}
+      {tab === 'agents' && <AgentsPanel data={data} />}
       {tab === 'dashboard' && <DashboardPanel data={data} />}
       {tab === 'conversations' && (
         <ConversationsPanel data={data} onChanged={refetch} />
       )}
+      {tab === 'listings' && <ListingsPanel data={data} onChanged={refetch} />}
       {tab === 'config' && <ConfigPanel data={data} onChanged={refetch} />}
     </div>
   );
