@@ -129,3 +129,17 @@ function inferHorizon(timeline: string | null): number {
   if (/(year|an|année)/.test(t)) return 56;
   return 21;
 }
+
+export async function deleteCalendarEvent(args: {
+  calendarId: string;
+  eventId: string;
+}): Promise<void> {
+  const auth = getAuth();
+  if (!auth) return;
+  const calendar = google.calendar({ version: 'v3', auth });
+  try {
+    await calendar.events.delete({ calendarId: args.calendarId, eventId: args.eventId });
+  } catch (e) {
+    console.warn('[calendar] deleteCalendarEvent failed (may already be deleted):', e);
+  }
+}

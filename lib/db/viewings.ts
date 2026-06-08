@@ -82,3 +82,24 @@ export async function listBookedViewings(): Promise<ViewingSlot[]> {
     .orderBy(desc(viewing_slots.created_at));
   return rows.map(rowToViewing);
 }
+
+export async function cancelViewing(viewingId: string): Promise<ViewingSlot | null> {
+  const rows = await db
+    .update(viewing_slots)
+    .set({ status: 'cancelled' })
+    .where(eq(viewing_slots.id, viewingId))
+    .returning();
+  return rows[0] ? rowToViewing(rows[0]) : null;
+}
+
+export async function rescheduleViewing(
+  viewingId: string,
+  newSlotIso: string
+): Promise<ViewingSlot | null> {
+  const rows = await db
+    .update(viewing_slots)
+    .set({ confirmed_slot: new Date(newSlotIso) })
+    .where(eq(viewing_slots.id, viewingId))
+    .returning();
+  return rows[0] ? rowToViewing(rows[0]) : null;
+}
