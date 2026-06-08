@@ -125,6 +125,36 @@ export async function getOrCreateAdminAssistant(
   );
 }
 
+export async function getMainAssistantConversation(
+  adminId: string
+): Promise<Conversation | null> {
+  const rows = await db
+    .select()
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.type, 'main_assistant'),
+        eq(conversations.admin_id, adminId)
+      )
+    )
+    .orderBy(desc(conversations.updated_at))
+    .limit(1);
+  return rows[0] ? rowToConversation(rows[0]) : null;
+}
+
+export async function getOrCreateMainAssistant(
+  adminId: string
+): Promise<Conversation> {
+  return (
+    (await getMainAssistantConversation(adminId)) ??
+    (await createConversation({
+      type: 'main_assistant',
+      admin_id: adminId,
+      primary_channel: 'web'
+    }))
+  );
+}
+
 /** Lead thread on a specific channel + listing (web and telegram are separate sessions). */
 export async function getLeadConversationByChannel(
   leadId: string,
