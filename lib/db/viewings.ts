@@ -94,11 +94,15 @@ export async function cancelViewing(viewingId: string): Promise<ViewingSlot | nu
 
 export async function rescheduleViewing(
   viewingId: string,
-  newSlotIso: string
+  newSlotIso: string,
+  newCalendarEventId?: string | null
 ): Promise<ViewingSlot | null> {
   const rows = await db
     .update(viewing_slots)
-    .set({ confirmed_slot: new Date(newSlotIso) })
+    .set({
+      confirmed_slot: new Date(newSlotIso),
+      ...(newCalendarEventId !== undefined ? { calendar_event_id: newCalendarEventId } : {})
+    })
     .where(eq(viewing_slots.id, viewingId))
     .returning();
   return rows[0] ? rowToViewing(rows[0]) : null;

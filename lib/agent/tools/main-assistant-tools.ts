@@ -18,7 +18,7 @@ import {
   rescheduleViewing,
   getOrCreateLeadSteward
 } from '@/lib/db';
-import { deleteCalendarEvent, getAvailableSlots } from '@/lib/calendar';
+import { createCalendarEvent, deleteCalendarEvent, getAvailableSlots } from '@/lib/calendar';
 import { dispatchReply } from '@/lib/dispatch';
 import { broadcastConversationUpdate } from '@/lib/events';
 import { notifyAdmins } from '@/lib/notify';
@@ -226,7 +226,21 @@ export function buildMainAssistantTools(
         const viewings = await listBookedViewings();
         const v = viewings.find((x) => x.id === viewing_id);
         if (!v) return { error: 'viewing_not_found' };
-        await rescheduleViewing(viewing_id, new_slot_iso);
+        const listing = v.listing_id ? await getListing(v.listing_id) : null;
+        const calendarId = listing?.agent_calendar_id || ctx.config.calendar_id;
+        if (v.calendar_event_id) {
+          await deleteCalendarEvent({ calendarId, eventId: v.calendar_event_id });
+        }
+        let newCalendarEventId: string | null = null;
+        if (listing && v.contact_email) {
+          newCalendarEventId = await createCalendarEvent({
+            calendarId,
+            slotIso: new_slot_iso,
+            contactEmail: v.contact_email,
+            listing
+          });
+        }
+        await rescheduleViewing(viewing_id, new_slot_iso, newCalendarEventId);
         return { ok: true, new_slot: formatSlot(new_slot_iso) };
       }
     }),
