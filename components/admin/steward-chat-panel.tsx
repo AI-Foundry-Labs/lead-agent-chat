@@ -98,7 +98,9 @@ export function StewardChatPanel({ scope }: { scope: StewardScope | null }) {
   }
 
   const title =
-    scope.type === 'anonymous' ? t.agent_anonymous_title : scope.title;
+    scope.type === 'anonymous'
+      ? `Steward · ${t.agent_anonymous_title}`
+      : `Steward · ${scope.title}`;
 
   return (
     <ChatShell
