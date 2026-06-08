@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useLang } from '@/components/lang-provider';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AdminSection } from '@/components/admin/admin-section';
 import { StewardChatPanel, type StewardScope } from '@/components/admin/steward-chat-panel';
@@ -12,31 +11,13 @@ import { cn } from '@/lib/utils';
 export function AgentsPanel({ data }: { data: AdminData | null }) {
   const { t } = useLang();
   const [scope, setScope] = useState<StewardScope | null>(null);
-  const [linkCmd, setLinkCmd] = useState<string | null>(null);
 
   if (!data) return null;
 
-  async function linkTelegram() {
-    const res = await fetch('/api/admin/link-telegram', { method: 'POST' });
-    const d = await res.json();
-    setLinkCmd(d.command ?? null);
-  }
-
   return (
     <div className="space-y-3">
-      {linkCmd && (
-        <p className="rounded-xl border border-border/80 bg-muted/30 px-4 py-2 text-xs">
-          {t.link_info} <code>{linkCmd}</code>
-        </p>
-      )}
-
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(260px,320px)_1fr]">
         <AdminSection title={t.tab_agents}>
-          <div className="mb-2">
-            <Button variant="outline" size="sm" onClick={() => void linkTelegram()}>
-              {t.link_telegram}
-            </Button>
-          </div>
           <div className="max-h-[600px] divide-y divide-border/80 overflow-y-auto rounded-xl border border-border/80 bg-card">
             <button
               type="button"

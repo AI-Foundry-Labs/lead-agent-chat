@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
 import { ChatBubble } from '@/components/chat/chat-bubble';
 import { ChatComposer } from '@/components/chat/chat-composer';
 import { ChatMessageList, ChatShell, ChatTypingIndicator } from '@/components/chat/chat-shell';
 import { useLang } from '@/components/lang-provider';
 
 type Msg = { id: string; role: string; content: string };
+type LinkInfo = { deepLink: string | null; command: string };
 
 export function AssistantPanel() {
   const router = useRouter();
@@ -15,6 +17,7 @@ export function AssistantPanel() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [linkInfo, setLinkInfo] = useState<LinkInfo | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { t } = useLang();
 
@@ -38,6 +41,13 @@ export function AssistantPanel() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, sending]);
+
+  async function linkTelegram() {
+    if (linkInfo) { setLinkInfo(null); return; }
+    const res = await fetch('/api/admin/link-telegram', { method: 'POST' });
+    const d = await res.json();
+    setLinkInfo({ deepLink: d.deep_link ?? null, command: d.command ?? '' });
+  }
 
   async function send() {
     const text = input.trim();
@@ -82,6 +92,26 @@ export function AssistantPanel() {
         />
       }
     >
+      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2">
+        <Button variant="outline" size="sm" onClick={() => void linkTelegram()}>
+          {t.link_telegram}
+        </Button>
+        {linkInfo && (
+          <span className="flex items-center gap-2 text-xs text-muted-foreground">
+            {linkInfo.deepLink && (
+              <a
+                href={linkInfo.deepLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-blue-600 underline hover:text-blue-800"
+              >
+                Open Telegram →
+              </a>
+            )}
+            <span>{t.link_info} <code>{linkInfo.command}</code></span>
+          </span>
+        )}
+      </div>
       {loadError && (
         <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
           Failed to load assistant.
