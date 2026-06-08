@@ -35,7 +35,28 @@ services:
       - .:/app
       - app_node_modules:/app/node_modules
     ports:
-      - "3030:3000"
+      - "3300:3000"
+
+  # Telegram long-polling — receives messages without needing a public webhook URL.
+  # Remove this service in production and register a webhook instead.
+  telegram:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    restart: unless-stopped
+    command: npm run telegram:dev
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_started
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://lead_agent:lead_agent_dev@db:5432/lead_agent
+    volumes:
+      - .:/app
+      - app_node_modules:/app/node_modules
 
 volumes:
   postgres_data:

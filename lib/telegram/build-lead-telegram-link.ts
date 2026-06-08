@@ -1,4 +1,5 @@
-import { getBot } from '@/lib/telegram';
+import { telegramConfigured } from '@/lib/telegram';
+import { getBotUsername, buildTelegramStartLink } from './get-bot-username';
 
 export type LeadTelegramLinkInfo = {
   token: string;
@@ -11,24 +12,13 @@ export type LeadTelegramLinkInfo = {
 export async function buildLeadTelegramLinkInfo(
   token: string
 ): Promise<LeadTelegramLinkInfo> {
-  const bot = getBot();
-  let deepLink: string | null = null;
-
-  if (bot) {
-    try {
-      const me = await bot.api.getMe();
-      if (me.username) {
-        deepLink = `https://t.me/${me.username}?start=${token}`;
-      }
-    } catch (e) {
-      console.error('[telegram] getMe failed:', e);
-    }
-  }
+  const username = await getBotUsername();
+  const deepLink = username ? buildTelegramStartLink(username, token) : null;
 
   return {
     token,
     command: `/start ${token}`,
     deepLink,
-    configured: !!bot
+    configured: telegramConfigured()
   };
 }

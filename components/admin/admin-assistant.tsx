@@ -9,11 +9,6 @@ import { ChatMessageList, ChatShell, ChatTypingIndicator } from '@/components/ch
 import { useLang } from '@/components/lang-provider';
 
 type Msg = { id: string; role: string; content: string };
-type TelegramLinkInfo = {
-  command: string;
-  deepLink: string | null;
-  configured: boolean;
-};
 
 export function AdminAssistant() {
   const router = useRouter();
@@ -21,8 +16,8 @@ export function AdminAssistant() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [linkInfo, setLinkInfo] = useState<TelegramLinkInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [tgLoading, setTgLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { t } = useLang();
 
@@ -83,14 +78,22 @@ export function AdminAssistant() {
     }
   }
 
-  async function linkTelegram() {
-    const res = await fetch('/api/admin/link-telegram', { method: 'POST' });
-    const d = await res.json();
-    setLinkInfo({
-      command: d.command ?? '',
-      deepLink: d.deep_link ?? null,
-      configured: Boolean(d.configured)
-    });
+  // Fetch a fresh one-time token then immediately open the Telegram deep link.
+  async function openTelegram() {
+    setTgLoading(true);
+    try {
+      const res = await fetch('/api/admin/link-telegram', { method: 'POST' });
+      const d = await res.json();
+      if (d.deep_link) {
+        window.open(d.deep_link, '_blank', 'noopener,noreferrer');
+      } else {
+        alert(d.configured === false ? 'Telegram bot not configured.' : `Send to bot: ${d.command}`);
+      }
+    } catch {
+      alert('Could not generate Telegram link.');
+    } finally {
+      setTgLoading(false);
+    }
   }
 
   return (
@@ -100,8 +103,8 @@ export function AdminAssistant() {
         subtitle={t.assistant_examples}
         heightClass="h-[640px]"
         headerAction={
-          <Button variant="outline" size="sm" onClick={() => void linkTelegram()}>
-            {t.link_telegram}
+          <Button variant="outline" size="sm" onClick={() => void openTelegram()} disabled={tgLoading}>
+            {tgLoading ? '…' : t.link_telegram}
           </Button>
         }
         footer={
@@ -115,26 +118,6 @@ export function AdminAssistant() {
           />
         }
       >
-        {linkInfo && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-border/80 bg-muted/30 px-4 py-2.5 text-xs">
-            <span>{t.link_info}</span>
-            <code className="rounded-md bg-background px-2 py-0.5">{linkInfo.command}</code>
-            {linkInfo.deepLink && (
-              <a
-                href={linkInfo.deepLink}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-md bg-brand px-2.5 py-1 font-medium text-brand-foreground"
-              >
-                Open bot
-              </a>
-            )}
-            {!linkInfo.configured && (
-              <span className="text-red-700">Telegram bot token is missing.</span>
-            )}
-          </div>
-        )}
-
         {loadError && (
           <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
             Failed to load assistant conversation.

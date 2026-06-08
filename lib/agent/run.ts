@@ -9,11 +9,13 @@ import {
   addMessage,
   updateConversation,
   updateLead,
-  listActiveHandoffRules
+  listActiveHandoffRules,
+  getOrCreateLeadSteward
 } from '@/lib/db';
+import { db, admins } from '@/lib/db/client';
 import { broadcastConversationUpdate } from '@/lib/events';
 import { dispatchReply } from '@/lib/dispatch';
-import { notifyAdmins } from '@/lib/notify';
+import { notifyAdmins, notifyAdminsInChat } from '@/lib/notify';
 import { matchRule } from '@/lib/agent/rules';
 import { buildLeadSystemPrompt, buildAdminSystemPrompt } from '@/lib/agent/prompts';
 import {
@@ -91,24 +93,52 @@ export async function runAgentTurn(
   // Takeover safety: a lead conversation in manual mode does not auto-reply.
   if (conversation.type === 'lead' && conversation.mode === 'manual') {
     await notifyAdmins(`New lead message (manual mode): ${message.slice(0, 160)}`);
+    await notifyAdminsInChat(`📩 Lead message (advisor mode):\n\n"${message.slice(0, 300)}"`);
     return { conversation, reply: '', status: 'manual' };
   }
 
-  // Deterministic handoff rules (admin-configured) pre-empt the agent for leads.
+  // Deterministic handoff rules: notify admins but let the agent keep responding.
+  // The agent goes silent only when admin explicitly clicks "Take over".
   if (conversation.type === 'lead' && message.trim()) {
     const rules = await listActiveHandoffRules();
     const matched = await matchRule(message, rules);
     if (matched) {
-      const updated = await updateConversation(conversationId, { mode: 'manual' });
-      if (conversation.lead_id)
-        await updateLead(conversation.lead_id, { status: 'handoff' });
-      const ack =
-        "Merci pour votre message. Un conseiller senior va vous répondre personnellement très vite. / Thank you — a senior advisor will follow up with you shortly.";
-      await addMessage({ conversation_id: conversationId, role: 'assistant', content: ack });
-      await notifyAdmins(`Handoff (rule: ${matched.description}) — "${message.slice(0, 120)}"`);
-      broadcastConversationUpdate(conversationId);
-      await dispatchReply(updated, ack);
-      return { conversation: updated, reply: ack, status: 'handoff' };
+      const lead = conversation.lead_id ? await getLeadById(conversation.lead_id) : null;
+      // Only escalate once — skip if lead is already in handoff status.
+      if (!lead || lead.status !== 'handoff') {
+        if (conversation.lead_id)
+          await updateLead(conversation.lead_id, { status: 'handoff' });
+        await notifyAdmins(`Handoff (rule: ${matched.description}) — "${message.slice(0, 120)}"`);
+        await notifyAdminsInChat(`🚨 Advisor takeover needed — rule: ${matched.description}\nLead said: "${message.slice(0, 300)}"`);
+        // Fire-and-forget: steward agent generates a full natural-language briefing
+        // for the admin in the Agents tab, with complete lead context.
+        if (conversation.lead_id) {
+          const leadId = conversation.lead_id;
+          const triggerMsg = message;
+          const ruleName = matched.description;
+          ;(async () => {
+            try {
+              const [adminRow] = await db
+                .select({ id: admins.id, name: admins.name })
+                .from(admins)
+                .limit(1);
+              if (!adminRow) return;
+              const stewardConv = await getOrCreateLeadSteward(leadId);
+              await runAgentTurn(
+                stewardConv.id,
+                `Handoff alert: the rule "${ruleName}" was triggered. ` +
+                `The lead just sent: "${triggerMsg.slice(0, 400)}". ` +
+                `Please review their full profile and conversation history, then give me a clear briefing: ` +
+                `who is this lead, what do they need, why does this require a human advisor, and what should I do next?`,
+                { type: 'lead_steward', leadId, adminId: adminRow.id, adminName: adminRow.name }
+              );
+            } catch (e) {
+              console.error('[handoff] steward briefing failed:', e);
+            }
+          })();
+        }
+      }
+      // Fall through — agent continues responding normally.
     }
   }
 

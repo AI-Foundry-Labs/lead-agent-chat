@@ -110,7 +110,7 @@ export function ChatPanel({
           {
             id: `e-${Date.now()}`,
             role: 'assistant',
-            content: mode === 'manual' ? t.manual_banner : 'Erreur, réessayez.'
+            content: 'Erreur, réessayez.'
           }
         ]);
       }
@@ -132,7 +132,7 @@ export function ChatPanel({
           onSend={() => void send()}
           placeholder={t.chat_placeholder}
           sendLabel={t.send}
-          disabled={sending || mode === 'manual'}
+          disabled={sending}
         />
       }
     >
