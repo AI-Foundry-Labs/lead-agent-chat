@@ -5,7 +5,7 @@ import {
 import {
   bindTelegramToAdmin,
   getAdminByTelegramUserId,
-  getOrCreateAdminAssistant,
+  getOrCreateMainAssistant,
   getConversation,
   getOrCreateLeadTelegramConversation,
   getMostRecentLeadTelegramConversation,
@@ -70,9 +70,9 @@ async function handleAdminMessage(
   const admin = await getAdminByTelegramUserId(fromId);
   if (!admin) return false;
 
-  const conv = await getOrCreateAdminAssistant(admin.id);
+  const conv = await getOrCreateMainAssistant(admin.id);
   await runAgentTurn(conv.id, text, {
-    type: 'admin',
+    type: 'main_assistant',
     adminId: admin.id,
     adminName: admin.name
   });
