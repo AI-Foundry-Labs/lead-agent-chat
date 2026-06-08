@@ -13,6 +13,7 @@ type LinkInfo = { deepLink: string | null; command: string };
 
 export function AssistantPanel() {
   const router = useRouter();
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -34,9 +35,22 @@ export function AssistantPanel() {
       })
       .then((d) => {
         if (d?.messages) setMessages(d.messages);
+        if (d?.conversationId) setConversationId(d.conversationId);
       })
       .catch(() => setLoadError('load_failed'));
   }, [router]);
+
+  // SSE: sync messages from any channel (Telegram → web, web → Telegram)
+  useEffect(() => {
+    if (!conversationId) return;
+    const es = new EventSource(`/api/admin/stream?conversationId=${conversationId}`);
+    es.onmessage = (e) => {
+      const data = JSON.parse(e.data as string) as { messages: Msg[] };
+      if (data.messages) setMessages(data.messages);
+    };
+    es.onerror = () => es.close();
+    return () => es.close();
+  }, [conversationId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });

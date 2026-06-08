@@ -49,6 +49,18 @@ export function StewardChatPanel({ scope }: { scope: StewardScope | null }) {
     void loadChat();
   }, [loadKey, loadChat]);
 
+  // SSE: sync messages in real-time (Telegram → web, handoff auto-briefings, etc.)
+  useEffect(() => {
+    if (!conversationId) return;
+    const es = new EventSource(`/api/admin/stream?conversationId=${conversationId}`);
+    es.onmessage = (e) => {
+      const data = JSON.parse(e.data as string) as { messages: { id: string; role: string; content: string }[] };
+      if (data.messages) setMessages(data.messages);
+    };
+    es.onerror = () => es.close();
+    return () => es.close();
+  }, [conversationId]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, sending]);
