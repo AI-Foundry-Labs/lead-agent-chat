@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils';
 
-type TabKey = 'agents' | 'dashboard' | 'conversations' | 'listings' | 'config';
+type TabKey = 'agents' | 'dashboard' | 'conversations' | 'listings' | 'config' | 'assistant';
 
 export function AdminTabNav({
   tabs,
