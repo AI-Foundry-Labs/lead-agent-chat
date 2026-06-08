@@ -31,6 +31,8 @@ import { buildLeadTools } from '@/lib/agent/tools/lead-tools';
 import { buildAdminTools } from '@/lib/agent/tools/admin-tools';
 import { buildLeadStewardTools } from '@/lib/agent/tools/lead-steward-tools';
 import { buildAnonymousStewardTools } from '@/lib/agent/tools/anonymous-steward-tools';
+import { buildMainAssistantTools } from '@/lib/agent/tools/main-assistant-tools';
+import { buildMainAssistantSystemPrompt } from '@/lib/agent/prompts/main-assistant-prompt';
 import type { AgentContext } from '@/lib/agent/tools/context';
 import type { Conversation, Language } from '@/lib/types';
 
@@ -38,7 +40,8 @@ export type Actor =
   | { type: 'lead' }
   | { type: 'admin'; adminId: string; adminName: string | null }
   | { type: 'lead_steward'; leadId: string; adminId: string; adminName: string | null }
-  | { type: 'anonymous_steward'; adminId: string; adminName: string | null };
+  | { type: 'anonymous_steward'; adminId: string; adminName: string | null }
+  | { type: 'main_assistant'; adminId: string; adminName: string | null };
 
 export type TurnStatus = 'replied' | 'manual' | 'handoff';
 
@@ -53,6 +56,7 @@ const MAX_STEPS = 6;
 function shouldDispatchReply(conversation: Conversation): boolean {
   if (conversation.type === 'lead') return true;
   if (conversation.type === 'admin_assistant') return true;
+  if (conversation.type === 'main_assistant') return true;
   return false;
 }
 
@@ -146,7 +150,10 @@ export async function runAgentTurn(
 
   let system: string;
   let tools;
-  if (actor.type === 'admin') {
+  if (actor.type === 'main_assistant') {
+    system = await buildMainAssistantSystemPrompt({ config, adminName: actor.adminName });
+    tools = buildMainAssistantTools(ctx, actor.adminId, actor.adminName, runAgentTurn as Parameters<typeof buildMainAssistantTools>[3]);
+  } else if (actor.type === 'admin') {
     system = buildAdminSystemPrompt({ config, adminName: actor.adminName });
     tools = buildAdminTools(ctx);
   } else if (actor.type === 'lead_steward') {
