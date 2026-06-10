@@ -8,6 +8,7 @@ import { ChatBubble } from '@/components/chat/chat-bubble';
 import { ChatComposer } from '@/components/chat/chat-composer';
 import { ChatMessageList, ChatShell } from '@/components/chat/chat-shell';
 import { AdminSection } from '@/components/admin/admin-section';
+import { LeadMemoryPanel } from '@/components/admin/lead-memory-panel';
 import { POTENTIAL_COLOR, adminAction, type AdminData, type AdminThread } from '@/components/admin/admin-types';
 import { cn } from '@/lib/utils';
 
@@ -183,20 +184,10 @@ export function ConversationsPanel({
             />
           }
         >
-          {detail.lead && Object.keys(detail.lead.qual_values).length > 0 && (
-            <div className="border-b border-border/80 bg-muted/30 px-4 py-2.5 text-xs">
-              <span className="font-medium">{t.conv_qual}: </span>
-              {Object.entries(detail.lead.qual_values)
-                .map(([k, v]) => `${k}: ${v}`)
-                .join(' · ')}
-            </div>
-          )}
-          {detail.lead?.long_term_memory?.trim() && (
-            <div className="border-b border-border/80 bg-brand/5 px-4 py-2.5 text-xs whitespace-pre-wrap">
-              <span className="font-medium">{t.conv_memory}: </span>
-              {detail.lead.long_term_memory.trim()}
-            </div>
-          )}
+          <LeadMemoryPanel
+            qualValues={detail.lead?.qual_values}
+            longTermMemory={detail.lead?.long_term_memory}
+          />
           <ChatMessageList className="max-h-[420px]">
             {detail.messages.map((m) => (
               <ChatBubble key={m.id} role={m.role} content={m.content} />
