@@ -9,14 +9,13 @@ import {
   addMessage,
   updateConversation,
   updateLead,
-  listActiveHandoffRules,
-  getOrCreateLeadSteward
+  listActiveHandoffRules
 } from '@/lib/db';
-import { db, admins } from '@/lib/db/client';
 import { broadcastConversationUpdate } from '@/lib/events';
 import { dispatchReply } from '@/lib/dispatch';
 import { notifyAdmins, notifyAdminsInChat } from '@/lib/notify';
 import { matchRule } from '@/lib/agent/rules';
+import { reportHandoffBriefing } from '@/lib/agent/report-handoff-briefing';
 import { buildLeadSystemPrompt } from '@/lib/agent/prompts';
 import { buildStewardSystemPrompt } from '@/lib/agent/prompts/steward-prompts';
 import { buildCrossThreadContextBlock } from '@/lib/agent/cross-thread-context';
@@ -107,41 +106,11 @@ export async function runAgentTurn(
         if (conversation.lead_id)
           await updateLead(conversation.lead_id, { status: 'handoff' });
         await notifyAdmins(`[Handoff] Rule triggered: "${matched.description}" — "${message.slice(0, 120)}"`);
-        await notifyAdminsInChat(`🚨 Intervention conseiller requise\n\nRègle déclenchée : « ${matched.description} »\n\nLe prospect vient d'envoyer :\n« ${message.slice(0, 300)} »\n\nVeuillez consulter l'onglet Agents pour le briefing complet et prendre en charge la conversation si nécessaire.`);
-        // Fire-and-forget: steward agent generates a full natural-language briefing
-        // for the admin in the Agents tab, with complete lead context.
-        if (conversation.lead_id) {
-          const leadId = conversation.lead_id;
-          const triggerMsg = message;
-          const ruleName = matched.description;
-          ;(async () => {
-            try {
-              const [adminRow] = await db
-                .select({ id: admins.id, name: admins.name })
-                .from(admins)
-                .limit(1);
-              if (!adminRow) return;
-              const stewardConv = await getOrCreateLeadSteward(leadId);
-              await runAgentTurn(
-                stewardConv.id,
-                `🚨 Alerte de transfert — intervention conseiller requise\n\n` +
-                `La règle d'escalade suivante vient d'être déclenchée : « ${ruleName} ».\n\n` +
-                `Le prospect vient d'envoyer le message suivant :\n« ${triggerMsg.slice(0, 400)} »\n\n` +
-                `Merci de consulter le profil complet de ce prospect ainsi que l'historique de ses échanges, ` +
-                `puis : (1) réévaluez le potentiel (hot/warm/cold) et le statut du prospect via update_lead_status ` +
-                `si l'échange révèle un changement d'intention, (2) consignez les faits durables via remember_visitor_fact, ` +
-                `(3) fournissez-moi un briefing détaillé : qui est ce client, quels sont ses besoins, ` +
-                `pourquoi cette situation nécessite-t-elle l'intervention d'un conseiller humain, ` +
-                `et quelle est la prochaine action recommandée ?`,
-                { type: 'steward', leadId, adminId: adminRow.id, adminName: adminRow.name },
-                'fr',
-                'system'
-              );
-            } catch (e) {
-              console.error('[handoff] steward briefing failed:', e);
-            }
-          })();
-        }
+        // Lead reports up: generate a briefing from this lead's own context and post it
+        // into the admin's main_assistant panel (fire-and-forget — no separate steward agent).
+        const triggerMsg = message;
+        const ruleName = matched.description;
+        void reportHandoffBriefing({ lead, triggerMessage: triggerMsg, ruleName, lang });
       }
       // Fall through — agent continues responding normally.
     }

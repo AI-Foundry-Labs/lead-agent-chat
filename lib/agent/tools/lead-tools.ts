@@ -209,6 +209,33 @@ export function buildLeadTools(ctx: AgentContext) {
       }
     }),
 
+    update_lead_status: tool({
+      description:
+        'Update this visitor\'s potential (hot/warm/cold) and/or lifecycle status as their intent becomes clear. ' +
+        'Use status=abandoned when they say they are no longer interested / will not buy; ' +
+        'status=qualified once criteria are gathered; status=handoff for sensitive topics. ' +
+        'Always pass memory_note explaining why — it is persisted to long-term memory.',
+      inputSchema: z.object({
+        potential_status: z.enum(['hot', 'warm', 'cold']).optional(),
+        status: z.enum(['active', 'qualified', 'booked', 'handoff', 'abandoned']).optional(),
+        memory_note: z.string().max(400).describe('Why the status changed — e.g. "said they found another property"')
+      }),
+      execute: async ({ potential_status, status, memory_note }) => {
+        const lead = await ensureLead(ctx);
+        const updated = await updateLead(lead.id, {
+          ...(potential_status !== undefined && { potential_status }),
+          ...(status !== undefined && { status })
+        });
+        const date = new Date().toISOString().slice(0, 10);
+        const parts = [
+          status ? `status→${status}` : '',
+          potential_status ? `potential→${potential_status}` : ''
+        ].filter(Boolean).join(' ');
+        scheduleAppendLeadLongTermFacts(lead.id, [`PURCHASE STATUS — ${date}: ${parts}. ${memory_note}`.trim()]);
+        return { ok: true, status: updated.status, potential_status: updated.potential_status };
+      }
+    }),
+
     remember_visitor_fact: tool({
       description:
         'Persist durable visitor facts for future chats: identity/contact, product preferences, purchase status updates (viewing booked/cancelled/attended), objections, admin actions. Be thorough — storage is generous.',
