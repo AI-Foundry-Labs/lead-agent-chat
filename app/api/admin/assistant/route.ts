@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { getOrCreateMainAssistant, getVisibleMessages } from '@/lib/db';
 import { requireAdmin, toAuthResponse } from '@/lib/auth';
 import { runAgentTurn } from '@/lib/agent/run';
+import { dispatchUserMessage } from '@/lib/dispatch';
 
 export const runtime = 'nodejs';
 
@@ -33,6 +34,8 @@ export async function POST(req: Request) {
       return Response.json({ error: 'invalid_input' }, { status: 400 });
     }
     const conv = await getOrCreateMainAssistant(admin.id);
+    // Forward user message to Telegram so both channels stay in sync.
+    void dispatchUserMessage(conv, admin.name ?? 'Admin', parsed.data.message);
     const result = await runAgentTurn(conv.id, parsed.data.message, {
       type: 'main_assistant',
       adminId: admin.id,

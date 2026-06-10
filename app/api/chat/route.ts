@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
       viewing && viewing.status === 'booked' && viewing.confirmed_slot
         ? {
             listing_id: viewing.listing_id,
-            slot: formatSlot(viewing.confirmed_slot.toISOString())
+            slot: viewing.confirmed_slot.toISOString()
           }
         : null
   });

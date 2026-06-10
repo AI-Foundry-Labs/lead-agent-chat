@@ -5,7 +5,6 @@ import {
   toConversationAccessResponse
 } from '@/lib/conversation-access';
 import { subscribeConversation } from '@/lib/events';
-import { formatSlot } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -28,7 +27,7 @@ async function buildSnapshot(conversationId: string, leadId: string | null) {
       viewing && viewing.status === 'booked' && viewing.confirmed_slot
         ? {
             listing_id: viewing.listing_id,
-            slot: formatSlot(viewing.confirmed_slot.toISOString())
+            slot: viewing.confirmed_slot.toISOString()
           }
         : null
   };

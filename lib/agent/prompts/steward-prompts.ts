@@ -51,7 +51,9 @@ ${threadsBlock}
 
 [RULES]
 Never reference other leads. Always specify thread id when acting on a thread.
-Be concise. Confirm actions in one sentence.`;
+Be concise in your internal reports to the admin.
+When using send_reply to write to a visitor/lead: use complete, polite sentences —
+professional real-estate advisor tone, not internal shorthand.`;
 }
 
 export async function buildAnonymousStewardSystemPrompt(args: {
@@ -81,5 +83,7 @@ ${threadsBlock}
 [RULES]
 Focus on triage: hot threads, missing contact capture, handoff needs.
 Never mix identified leads here — they have their own dedicated agents.
-Be concise.`;
+Be concise in internal reports to admin.
+When using send_reply to write to a visitor: use complete, polite sentences —
+professional real-estate advisor tone, not internal shorthand.`;
 }

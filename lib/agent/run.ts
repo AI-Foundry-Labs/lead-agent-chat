@@ -68,7 +68,8 @@ function toModelMessages(
   return msgs
     .filter((m) => m.role !== 'tool')
     .map((m) => ({
-      role: m.role === 'user' ? 'user' : 'assistant',
+      // 'system' role = auto-injected prompt (handoff alerts etc.) → treat as user turn for LLM
+      role: (m.role === 'user' || m.role === 'system') ? 'user' : 'assistant',
       content: m.content
     }));
 }
@@ -77,7 +78,8 @@ export async function runAgentTurn(
   conversationId: string,
   message: string,
   actor: Actor,
-  lang: Language = 'fr'
+  lang: Language = 'fr',
+  messageRole: 'user' | 'system' = 'user'
 ): Promise<TurnResult> {
   const conversation = await getConversation(conversationId);
   if (!conversation) throw new Error('conversation_not_found');
@@ -88,7 +90,7 @@ export async function runAgentTurn(
   if (message.trim()) {
     await addMessage({
       conversation_id: conversationId,
-      role: 'user',
+      role: messageRole,
       content: message
     });
     broadcastConversationUpdate(conversationId);
@@ -96,8 +98,8 @@ export async function runAgentTurn(
 
   // Takeover safety: a lead conversation in manual mode does not auto-reply.
   if (conversation.type === 'lead' && conversation.mode === 'manual') {
-    await notifyAdmins(`New lead message (manual mode): ${message.slice(0, 160)}`);
-    await notifyAdminsInChat(`📩 Lead message (advisor mode):\n\n"${message.slice(0, 300)}"`);
+    await notifyAdmins(`[Advisor mode] New message from lead: "${message.slice(0, 160)}"`);
+    await notifyAdminsInChat(`📩 Nouveau message client — mode conseiller\n\nLe prospect vous a envoyé :\n« ${message.slice(0, 300)} »\n\nVous pouvez répondre directement depuis l'interface web.`);
     return { conversation, reply: '', status: 'manual' };
   }
 
@@ -112,8 +114,8 @@ export async function runAgentTurn(
       if (!lead || lead.status !== 'handoff') {
         if (conversation.lead_id)
           await updateLead(conversation.lead_id, { status: 'handoff' });
-        await notifyAdmins(`Handoff (rule: ${matched.description}) — "${message.slice(0, 120)}"`);
-        await notifyAdminsInChat(`🚨 Advisor takeover needed — rule: ${matched.description}\nLead said: "${message.slice(0, 300)}"`);
+        await notifyAdmins(`[Handoff] Rule triggered: "${matched.description}" — "${message.slice(0, 120)}"`);
+        await notifyAdminsInChat(`🚨 Intervention conseiller requise\n\nRègle déclenchée : « ${matched.description} »\n\nLe prospect vient d'envoyer :\n« ${message.slice(0, 300)} »\n\nVeuillez consulter l'onglet Agents pour le briefing complet et prendre en charge la conversation si nécessaire.`);
         // Fire-and-forget: steward agent generates a full natural-language briefing
         // for the admin in the Agents tab, with complete lead context.
         if (conversation.lead_id) {
@@ -130,11 +132,16 @@ export async function runAgentTurn(
               const stewardConv = await getOrCreateLeadSteward(leadId);
               await runAgentTurn(
                 stewardConv.id,
-                `Handoff alert: the rule "${ruleName}" was triggered. ` +
-                `The lead just sent: "${triggerMsg.slice(0, 400)}". ` +
-                `Please review their full profile and conversation history, then give me a clear briefing: ` +
-                `who is this lead, what do they need, why does this require a human advisor, and what should I do next?`,
-                { type: 'lead_steward', leadId, adminId: adminRow.id, adminName: adminRow.name }
+                `🚨 Alerte de transfert — intervention conseiller requise\n\n` +
+                `La règle d'escalade suivante vient d'être déclenchée : « ${ruleName} ».\n\n` +
+                `Le prospect vient d'envoyer le message suivant :\n« ${triggerMsg.slice(0, 400)} »\n\n` +
+                `Merci de consulter le profil complet de ce prospect ainsi que l'historique de ses échanges, ` +
+                `puis de me fournir un briefing détaillé : qui est ce client, quels sont ses besoins, ` +
+                `pourquoi cette situation nécessite-t-elle l'intervention d'un conseiller humain, ` +
+                `et quelle est la prochaine action recommandée ?`,
+                { type: 'lead_steward', leadId, adminId: adminRow.id, adminName: adminRow.name },
+                'fr',
+                'system'
               );
             } catch (e) {
               console.error('[handoff] steward briefing failed:', e);

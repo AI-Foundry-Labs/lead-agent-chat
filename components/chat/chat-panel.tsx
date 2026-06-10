@@ -7,6 +7,7 @@ import { ChatComposer } from '@/components/chat/chat-composer';
 import { ChatMessageList, ChatShell, ChatTypingIndicator } from '@/components/chat/chat-shell';
 import { addPendingConversationId } from '@/components/chat/pending-conversation-ids';
 import { useLang } from '@/components/lang-provider';
+import { formatSlot } from '@/lib/format';
 
 type ToolCall = { toolName?: string };
 type ChatMessage = {
@@ -46,7 +47,7 @@ export function ChatPanel({
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(Boolean(initialConversationId));
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { t } = useLang();
+  const { t, lang } = useLang();
 
   useEffect(() => {
     if (!initialConversationId) return;
@@ -139,22 +140,29 @@ export function ChatPanel({
       <ChatMessageList scrollRef={scrollRef}>
         {showGreeting && <ChatBubble role="assistant" content={greeting} />}
         {loading && <ChatTypingIndicator />}
-        {messages.map((m) => (
-          <div key={m.id}>
-            {Array.isArray(m.tool_calls) && m.tool_calls.length > 0 && (
-              <p className="mb-1.5 text-center text-[11px] text-muted-foreground">
-                {m.tool_calls.map((tc) => tc.toolName).filter(Boolean).join(', ')}
-              </p>
-            )}
-            {m.content && <ChatBubble role={m.role} content={m.content} />}
-          </div>
-        ))}
+        {(() => {
+          // Find index of last assistant message to inject viewing badge after it
+          const lastAssistantIdx = messages.reduce(
+            (last, m, i) => (m.role === 'assistant' && m.content ? i : last),
+            -1
+          );
+          return messages.map((m, i) => (
+            <div key={m.id}>
+              {Array.isArray(m.tool_calls) && m.tool_calls.length > 0 && (
+                <p className="mb-1.5 text-center text-[11px] text-muted-foreground">
+                  {m.tool_calls.map((tc) => tc.toolName).filter(Boolean).join(', ')}
+                </p>
+              )}
+              {m.content && <ChatBubble role={m.role} content={m.content} />}
+              {viewing && i === lastAssistantIdx && (
+                <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  {t.viewing_confirmed} — {formatSlot(viewing.slot, lang === 'en' ? 'en' : 'fr')}
+                </div>
+              )}
+            </div>
+          ));
+        })()}
         {sending && <ChatTypingIndicator />}
-        {viewing && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            {t.viewing_confirmed} — {viewing.slot}
-          </div>
-        )}
         {mode === 'manual' && (
           <Badge variant="warning" className="mx-auto block w-fit">
             {t.manual_banner}

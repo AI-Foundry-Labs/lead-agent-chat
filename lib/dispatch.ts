@@ -49,3 +49,25 @@ export async function dispatchReply(
     if (chatId) await sendTelegramMessage(chatId, content);
   }
 }
+
+// Forward a web-originated user message to the admin's Telegram so the full
+// conversation is visible on both channels.
+export async function dispatchUserMessage(
+  conversation: Conversation,
+  senderName: string,
+  content: string
+): Promise<void> {
+  if (!content.trim()) return;
+  if (
+    (conversation.type === 'admin_assistant' || conversation.type === 'main_assistant') &&
+    conversation.admin_id
+  ) {
+    const rows = await db
+      .select({ telegram_user_id: admins.telegram_user_id })
+      .from(admins)
+      .where(eq(admins.id, conversation.admin_id))
+      .limit(1);
+    const chatId = rows[0]?.telegram_user_id;
+    if (chatId) await sendTelegramMessage(chatId, `user message: ${senderName}\n${content}`);
+  }
+}

@@ -19,7 +19,7 @@ export type ConversationType =
   | 'admin_assistant'
   | 'main_assistant';
 export type ConversationMode = 'agent' | 'manual';
-export type MessageRole = 'user' | 'assistant' | 'admin' | 'tool';
+export type MessageRole = 'user' | 'assistant' | 'admin' | 'tool' | 'system';
 export type ViewingStatus = 'proposed' | 'booked' | 'cancelled';
 
 export interface Conversation {

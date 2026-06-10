@@ -20,7 +20,7 @@ function toModelMessages(
   return msgs
     .filter((m) => m.role !== 'tool')
     .map((m) => ({
-      role: m.role === 'user' ? 'user' : 'assistant',
+      role: (m.role === 'user' || m.role === 'system') ? 'user' : 'assistant',
       content: m.content
     }));
 }
