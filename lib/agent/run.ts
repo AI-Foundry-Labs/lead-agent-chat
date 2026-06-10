@@ -43,7 +43,7 @@ export interface TurnResult {
   status: TurnStatus;
 }
 
-const MAX_STEPS = 6;
+const MAX_STEPS = 10;
 
 function shouldDispatchReply(conversation: Conversation): boolean {
   if (conversation.type === 'lead') return true;
@@ -172,6 +172,14 @@ export async function runAgentTurn(
 
   const toolCalls = result.steps.flatMap((s) => s.toolCalls);
   const toolResults = result.steps.flatMap((s) => s.toolResults);
+
+  if (!result.text.trim()) {
+    console.warn(
+      '[agent] empty reply after', result.steps.length, 'steps —',
+      'finishReason:', result.finishReason,
+      'toolCalls:', toolCalls.length
+    );
+  }
 
   await addMessage({
     conversation_id: conversationId,
