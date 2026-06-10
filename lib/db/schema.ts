@@ -19,8 +19,8 @@ export const conversations = pgTable(
   'conversations',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    type: varchar('type', { length: 24 }).notNull(), // lead | steward | main_assistant
-    lead_id: uuid('lead_id'), // null while anonymous; null steward = anonymous pool
+    type: varchar('type', { length: 24 }).notNull(), // lead | operator | main_assistant
+    lead_id: uuid('lead_id'), // null while anonymous; null operator = anonymous pool
     admin_id: uuid('admin_id'), // set for main_assistant
     listing_id: varchar('listing_id', { length: 50 }), // the property under discussion
     primary_channel: varchar('primary_channel', { length: 10 })

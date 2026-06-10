@@ -17,14 +17,14 @@ import { notifyAdmins, notifyAdminsInChat } from '@/lib/notify';
 import { matchRule } from '@/lib/agent/rules';
 import { reportHandoffBriefing } from '@/lib/agent/report-handoff-briefing';
 import { buildLeadSystemPrompt } from '@/lib/agent/prompts';
-import { buildStewardSystemPrompt } from '@/lib/agent/prompts/steward-prompts';
+import { buildOperatorSystemPrompt } from '@/lib/agent/prompts/operator-prompts';
 import { buildCrossThreadContextBlock } from '@/lib/agent/cross-thread-context';
 import {
   buildThreadContextMessages,
   scheduleThreadMemorySummarize
 } from '@/lib/agent/thread-memory';
 import { buildLeadTools } from '@/lib/agent/tools/lead-tools';
-import { buildStewardTools } from '@/lib/agent/tools/steward-tools';
+import { buildOperatorTools } from '@/lib/agent/tools/operator-tools';
 import { buildMainAssistantTools } from '@/lib/agent/tools/main-assistant-tools';
 import { buildMainAssistantSystemPrompt } from '@/lib/agent/prompts/main-assistant-prompt';
 import type { AgentContext } from '@/lib/agent/tools/context';
@@ -32,7 +32,7 @@ import type { Conversation, Language } from '@/lib/types';
 
 export type Actor =
   | { type: 'lead' }
-  | { type: 'steward'; leadId: string | null; adminId: string; adminName: string | null }
+  | { type: 'operator'; leadId: string | null; adminId: string; adminName: string | null }
   | { type: 'main_assistant'; adminId: string; adminName: string | null };
 
 export type TurnStatus = 'replied' | 'manual' | 'handoff';
@@ -107,7 +107,7 @@ export async function runAgentTurn(
           await updateLead(conversation.lead_id, { status: 'handoff' });
         await notifyAdmins(`[Handoff] Rule triggered: "${matched.description}" — "${message.slice(0, 120)}"`);
         // Lead reports up: generate a briefing from this lead's own context and post it
-        // into the admin's main_assistant panel (fire-and-forget — no separate steward agent).
+        // into the admin's main_assistant panel (fire-and-forget — no separate operator agent).
         const triggerMsg = message;
         const ruleName = matched.description;
         void reportHandoffBriefing({ lead, triggerMessage: triggerMsg, ruleName, lang });
@@ -123,16 +123,16 @@ export async function runAgentTurn(
   if (actor.type === 'main_assistant') {
     system = await buildMainAssistantSystemPrompt({ config, adminName: actor.adminName });
     tools = buildMainAssistantTools(ctx, actor.adminId, actor.adminName, runAgentTurn as Parameters<typeof buildMainAssistantTools>[3]);
-  } else if (actor.type === 'steward') {
+  } else if (actor.type === 'operator') {
     const lead = actor.leadId ? await getLeadById(actor.leadId) : null;
     if (actor.leadId && !lead) throw new Error('lead_not_found');
-    system = await buildStewardSystemPrompt({
+    system = await buildOperatorSystemPrompt({
       config,
       lead,
       adminName: actor.adminName,
       lang
     });
-    tools = buildStewardTools(ctx, actor.leadId);
+    tools = buildOperatorTools(ctx, actor.leadId);
   } else {
     const listing = await getListing(conversation.listing_id);
     const lead = conversation.lead_id

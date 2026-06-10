@@ -1,13 +1,13 @@
 /**
- * Smoke test for the unified steward agent (lead mode + pool mode).
+ * Smoke test for the unified operator agent (lead mode + pool mode).
  * Verifies tool presence and a live tool-call in each scope.
  *
- * Usage: tsx --env-file=.env scripts/test-steward.ts
+ * Usage: tsx --env-file=.env scripts/test-operator.ts
  */
 import { db, conversations, messages, leads, admins } from '../lib/db/client';
-import { createConversation, getAgencyConfig, getOrCreateAnonymousSteward } from '../lib/db';
+import { createConversation, getAgencyConfig, getOrCreateAnonymousOperator } from '../lib/db';
 import { runAgentTurn } from '../lib/agent/run';
-import { buildStewardTools } from '../lib/agent/tools/steward-tools';
+import { buildOperatorTools } from '../lib/agent/tools/operator-tools';
 import { eq, inArray } from 'drizzle-orm';
 import type { AgentContext } from '../lib/agent/tools/context';
 
@@ -26,7 +26,7 @@ function toolNamesOf(toolCalls: unknown): string[] {
 }
 
 async function main() {
-  console.log('\n=== Unified Steward Smoke Test ===\n');
+  console.log('\n=== Unified Operator Smoke Test ===\n');
   const config = await getAgencyConfig();
   if (!config) { console.error('✗ run db:seed'); process.exit(1); }
   const [admin] = await db.select().from(admins).limit(1);
@@ -35,34 +35,34 @@ async function main() {
   // ── Phase 1: tool presence (both scopes share the same toolset) ──
   const mockCtx = {
     conversation: {
-      id: 'mock', type: 'steward', lead_id: null, admin_id: admin.id, listing_id: null,
+      id: 'mock', type: 'operator', lead_id: null, admin_id: admin.id, listing_id: null,
       primary_channel: 'web', mode: 'agent', thread_summary: null, summarized_turn_count: 0,
       created_at: new Date(), updated_at: new Date()
     },
     config
   } as AgentContext;
-  const tools = Object.keys(buildStewardTools(mockCtx, 'some-lead-id'));
+  const tools = Object.keys(buildOperatorTools(mockCtx, 'some-lead-id'));
   const missing = EXPECTED_TOOLS.filter((t) => !tools.includes(t));
   console.log(`Phase 1 — Tool presence: ${EXPECTED_TOOLS.length - missing.length}/${EXPECTED_TOOLS.length}`);
   if (missing.length) console.log(`  missing: ${missing.join(', ')}`);
-  else console.log('  ✓ all steward tools registered\n');
+  else console.log('  ✓ all operator tools registered\n');
 
   // ── Phase 2: lead mode — update potential via natural language ──
   const [lead] = await db.insert(leads).values({
-    channel: 'web', email: 'steward.test@example.com', name: 'Steward Test',
+    channel: 'web', email: 'operator.test@example.com', name: 'Operator Test',
     listing_id: null, language: 'en', status: 'active', qual_values: {}
   }).returning();
   createdLeadIds.push(lead.id);
-  const stewardConv = await createConversation({ type: 'steward', lead_id: lead.id, primary_channel: 'web' });
-  createdConvIds.push(stewardConv.id);
+  const operatorConv = await createConversation({ type: 'operator', lead_id: lead.id, primary_channel: 'web' });
+  createdConvIds.push(operatorConv.id);
 
   const r1 = await runAgentTurn(
-    stewardConv.id,
+    operatorConv.id,
     'This lead just told us they have cash ready and want to buy immediately. Mark them as hot and note why.',
-    { type: 'steward', leadId: lead.id, adminId: admin.id, adminName: admin.name },
+    { type: 'operator', leadId: lead.id, adminId: admin.id, adminName: admin.name },
     'en'
   );
-  const msgs1 = await db.select().from(messages).where(eq(messages.conversation_id, stewardConv.id));
+  const msgs1 = await db.select().from(messages).where(eq(messages.conversation_id, operatorConv.id));
   const called1 = msgs1.flatMap((m) => toolNamesOf(m.tool_calls));
   const pass1 = called1.includes('update_lead_status') || called1.includes('remember_visitor_fact');
   console.log(`Phase 2 — Lead mode (set hot): ${pass1 ? '✓ PASS' : '✗ FAIL'}`);
@@ -70,11 +70,11 @@ async function main() {
   console.log(`  reply: "${r1.reply.slice(0, 100)}..."\n`);
 
   // ── Phase 3: pool mode — list anonymous threads ──
-  const poolConv = await getOrCreateAnonymousSteward();
+  const poolConv = await getOrCreateAnonymousOperator();
   const r2 = await runAgentTurn(
     poolConv.id,
     'List the anonymous visitor threads in the triage pool.',
-    { type: 'steward', leadId: null, adminId: admin.id, adminName: admin.name },
+    { type: 'operator', leadId: null, adminId: admin.id, adminName: admin.name },
     'en'
   );
   const poolMsgs = await db.select().from(messages).where(eq(messages.conversation_id, poolConv.id));

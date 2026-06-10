@@ -54,9 +54,9 @@ When using send_reply to write to a visitor: use complete, polite sentences —
 professional real-estate advisor tone, not internal shorthand. Be concise in internal reports to the admin.`;
 
 /**
- * Unified steward prompt. lead set → lead mode; lead null → anonymous pool mode.
+ * Unified operator prompt. lead set → lead mode; lead null → anonymous pool mode.
  */
-export async function buildStewardSystemPrompt(args: {
+export async function buildOperatorSystemPrompt(args: {
   config: AgencyConfig;
   lead: Lead | null;
   adminName: string | null;
@@ -106,6 +106,6 @@ ${TOOLS_BLOCK}
 
 [RULES]
 Focus on triage: hot threads, missing contact capture, handoff needs.
-Never mix identified leads here — they have their own dedicated steward scope.
+Never mix identified leads here — they have their own dedicated operator scope.
 ${REPLY_RULE}`;
 }

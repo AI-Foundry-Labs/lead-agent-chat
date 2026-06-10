@@ -1,6 +1,6 @@
 /**
  * Shared viewing cancel/reschedule logic with automatic long-term memory updates.
- * Used by both main_assistant and steward agents to avoid duplication.
+ * Used by both main_assistant and operator agents to avoid duplication.
  */
 import {
   listBookedViewings,

@@ -188,45 +188,45 @@ export async function getMostRecentLeadTelegramConversation(
 }
 
 /** Admin-facing agent scoped to one identified lead (1:1). */
-export async function getLeadStewardConversation(
+export async function getLeadOperatorConversation(
   leadId: string
 ): Promise<Conversation | null> {
   const rows = await db
     .select()
     .from(conversations)
     .where(
-      and(eq(conversations.type, 'steward'), eq(conversations.lead_id, leadId))
+      and(eq(conversations.type, 'operator'), eq(conversations.lead_id, leadId))
     )
     .limit(1);
   return rows[0] ? rowToConversation(rows[0]) : null;
 }
 
-export async function getOrCreateLeadSteward(leadId: string): Promise<Conversation> {
+export async function getOrCreateLeadOperator(leadId: string): Promise<Conversation> {
   return (
-    (await getLeadStewardConversation(leadId)) ??
+    (await getLeadOperatorConversation(leadId)) ??
     (await createConversation({
-      type: 'steward',
+      type: 'operator',
       lead_id: leadId,
       primary_channel: 'web'
     }))
   );
 }
 
-/** Singleton steward for the anonymous / unidentified visitor pool (lead_id IS NULL). */
-export async function getAnonymousStewardConversation(): Promise<Conversation | null> {
+/** Singleton operator for the anonymous / unidentified visitor pool (lead_id IS NULL). */
+export async function getAnonymousOperatorConversation(): Promise<Conversation | null> {
   const rows = await db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.type, 'steward'), isNull(conversations.lead_id)))
+    .where(and(eq(conversations.type, 'operator'), isNull(conversations.lead_id)))
     .limit(1);
   return rows[0] ? rowToConversation(rows[0]) : null;
 }
 
-export async function getOrCreateAnonymousSteward(): Promise<Conversation> {
+export async function getOrCreateAnonymousOperator(): Promise<Conversation> {
   return (
-    (await getAnonymousStewardConversation()) ??
+    (await getAnonymousOperatorConversation()) ??
     (await createConversation({
-      type: 'steward',
+      type: 'operator',
       primary_channel: 'web'
     }))
   );

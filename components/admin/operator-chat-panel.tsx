@@ -9,11 +9,11 @@ import { useLang } from '@/components/lang-provider';
 
 type Msg = { id: string; role: string; content: string };
 
-export type StewardScope =
+export type OperatorScope =
   | { type: 'lead'; leadId: string; title: string }
   | { type: 'anonymous' };
 
-export function StewardChatPanel({ scope }: { scope: StewardScope | null }) {
+export function OperatorChatPanel({ scope }: { scope: OperatorScope | null }) {
   const router = useRouter();
   const { t } = useLang();
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -31,7 +31,7 @@ export function StewardChatPanel({ scope }: { scope: StewardScope | null }) {
       scope.type === 'anonymous'
         ? 'scope=anonymous'
         : `lead_id=${encodeURIComponent(scope.leadId)}`;
-    const r = await fetch(`/api/admin/steward/chat?${qs}`);
+    const r = await fetch(`/api/admin/operator/chat?${qs}`);
     if (r.status === 401) {
       router.push('/admin/login');
       router.refresh();
@@ -72,7 +72,7 @@ export function StewardChatPanel({ scope }: { scope: StewardScope | null }) {
     setSending(true);
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: 'user', content: text }]);
     try {
-      const res = await fetch('/api/admin/steward/chat', {
+      const res = await fetch('/api/admin/operator/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
@@ -87,7 +87,7 @@ export function StewardChatPanel({ scope }: { scope: StewardScope | null }) {
         return;
       }
       const data = await res.json().catch(() => null);
-      if (!res.ok || !data) throw new Error('steward_chat_failed');
+      if (!res.ok || !data) throw new Error('operator_chat_failed');
       if (data.conversationId) setConversationId(data.conversationId);
       if (data.messages) setMessages(data.messages);
       else if (data.reply) {
@@ -111,8 +111,8 @@ export function StewardChatPanel({ scope }: { scope: StewardScope | null }) {
 
   const title =
     scope.type === 'anonymous'
-      ? `Steward · ${t.agent_anonymous_title}`
-      : `Steward · ${scope.title}`;
+      ? `Operator · ${t.agent_anonymous_title}`
+      : `Operator · ${scope.title}`;
 
   return (
     <ChatShell

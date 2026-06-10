@@ -1,5 +1,5 @@
 /**
- * Steward thread tools — read/draft/send/takeover visitor threads.
+ * Operator thread tools — read/draft/send/takeover visitor threads.
  * Works in two scopes determined by scopedLeadId:
  *   - lead mode (scopedLeadId set): only threads belonging to that lead
  *   - pool mode (scopedLeadId null): only anonymous / unidentified visitor threads
@@ -22,8 +22,8 @@ import { broadcastConversationUpdate } from '@/lib/events';
 import type { Conversation } from '@/lib/types';
 import type { AgentContext } from './context';
 
-export function buildStewardThreadTools(ctx: AgentContext, scopedLeadId: string | null) {
-  // Assert a conversation is in scope for this steward (lead-owned OR anonymous in pool mode).
+export function buildOperatorThreadTools(ctx: AgentContext, scopedLeadId: string | null) {
+  // Assert a conversation is in scope for this operator (lead-owned OR anonymous in pool mode).
   const assertThread = async (conversationId: string): Promise<Conversation | null> => {
     const conv = await getConversation(conversationId);
     if (!conv || conv.type !== 'lead') return null;

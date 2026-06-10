@@ -14,7 +14,7 @@ export type LeadStatus =
 export type PotentialStatus = 'hot' | 'warm' | 'cold';
 export type ConversationType =
   | 'lead'
-  | 'steward'
+  | 'operator'
   | 'main_assistant';
 export type ConversationMode = 'agent' | 'manual';
 export type MessageRole = 'user' | 'assistant' | 'admin' | 'tool' | 'system';

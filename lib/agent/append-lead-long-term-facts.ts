@@ -37,7 +37,7 @@ Structure (keep under ${LONG_TERM_MEMORY_TARGET_CHARS} chars total):
 1) IDENTITY — name, email, phone, language, preferred contact channel (dedupe)
 2) PRODUCT — budget, financing status, areas of interest, property types, rooms, floor preference, timeline, deal-breakers, intended use (dedupe, prefer newer)
 3) PURCHASE STATUS — current stage (browsing / qualified / viewing_scheduled / viewing_done / negotiating / booked / cancelled / abandoned), history of viewings (listing, slot, outcome: attended/cancelled/rescheduled), any offers made, objections raised, reasons for cancellations
-4) ADMIN ACTIONS — cancellations sent, follow-ups sent, manual takeovers, steward briefings done, last admin contact date and content summary
+4) ADMIN ACTIONS — cancellations sent, follow-ups sent, manual takeovers, operator briefings done, last admin contact date and content summary
 5) THREAD NOTES — one bullet per channel/listing thread with key state, format:
    "[web · listing:marais · thread:abc12345] …" or "[telegram · listing:vincennes · thread:def67890] …"
    Include: listing interest, qualification progress, viewing status, agent replies, open questions.

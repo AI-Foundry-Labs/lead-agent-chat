@@ -24,7 +24,7 @@ const MAIN_ASSISTANT_EXPECTED_TOOLS = [
   'pipeline_summary', 'weekly_report', 'bulk_follow_up',
   'list_listings', 'create_listing', 'update_listing',
   'list_viewings', 'list_available_slots',
-  'trigger_steward_briefing', 'trigger_lead_turn',
+  'trigger_operator_briefing', 'trigger_lead_turn',
   'list_handoff_rules', 'create_handoff_rule', 'toggle_handoff_rule', 'delete_handoff_rule',
   'update_criteria', 'update_config'
 ];

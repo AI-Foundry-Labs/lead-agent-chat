@@ -18,7 +18,7 @@ import {
   createListing,
   updateListing,
   listBookedViewings,
-  getOrCreateLeadSteward,
+  getOrCreateLeadOperator,
   listConversationsByLeadId,
   listHandoffRules,
   createHandoffRule,
@@ -43,7 +43,7 @@ import type { AgentContext } from './context';
 type RunAgentTurn = (
   conversationId: string,
   message: string,
-  actor: { type: 'steward'; leadId: string | null; adminId: string; adminName: string | null } | { type: 'lead' },
+  actor: { type: 'operator'; leadId: string | null; adminId: string; adminName: string | null } | { type: 'lead' },
   lang?: string,
   messageRole?: 'user' | 'system'
 ) => Promise<{ reply: string }>;
@@ -138,7 +138,7 @@ export function buildMainAssistantTools(
     }),
 
     get_lead_threads: tool({
-      description: 'List all conversation threads for a lead (web, Telegram, steward, etc.).',
+      description: 'List all conversation threads for a lead (web, Telegram, operator, etc.).',
       inputSchema: z.object({ lead_id: z.string() }),
       execute: async ({ lead_id }) => {
         const threads = await listConversationsByLeadId(lead_id);
@@ -454,9 +454,9 @@ export function buildMainAssistantTools(
 
     // ─── Subagent Triggers ──────────────────────────────────────────────────
 
-    trigger_steward_briefing: tool({
+    trigger_operator_briefing: tool({
       description:
-        'Run the lead steward agent for a specific lead and return a full briefing. Use before advising on complex leads.',
+        'Run the lead operator agent for a specific lead and return a full briefing. Use before advising on complex leads.',
       inputSchema: z.object({
         lead_id: z.string(),
         question: z.string().max(400).optional()
@@ -464,12 +464,12 @@ export function buildMainAssistantTools(
       execute: async ({ lead_id, question }) => {
         const lead = await getLeadById(lead_id);
         if (!lead) return { error: 'lead_not_found' };
-        const stewardConv = await getOrCreateLeadSteward(lead_id);
+        const operatorConv = await getOrCreateLeadOperator(lead_id);
         const prompt = question
           ? `${question} Please review this lead's full profile and give a concise briefing.`
           : `Please review this lead's full profile and conversation history. Give me a concise briefing: who they are, what they want, their qualification status, and recommended next action.`;
-        const result = await runAgentTurn(stewardConv.id, prompt, {
-          type: 'steward',
+        const result = await runAgentTurn(operatorConv.id, prompt, {
+          type: 'operator',
           leadId: lead_id,
           adminId,
           adminName

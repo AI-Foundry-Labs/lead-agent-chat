@@ -4,13 +4,13 @@ import { useState } from 'react';
 import { useLang } from '@/components/lang-provider';
 import { Badge } from '@/components/ui/badge';
 import { AdminSection } from '@/components/admin/admin-section';
-import { StewardChatPanel, type StewardScope } from '@/components/admin/steward-chat-panel';
+import { OperatorChatPanel, type OperatorScope } from '@/components/admin/operator-chat-panel';
 import { POTENTIAL_COLOR, type AdminData } from '@/components/admin/admin-types';
 import { cn } from '@/lib/utils';
 
 export function AgentsPanel({ data }: { data: AdminData | null }) {
   const { t } = useLang();
-  const [scope, setScope] = useState<StewardScope | null>(null);
+  const [scope, setScope] = useState<OperatorScope | null>(null);
 
   if (!data) return null;
 
@@ -74,7 +74,7 @@ export function AgentsPanel({ data }: { data: AdminData | null }) {
           </div>
         </AdminSection>
 
-        <StewardChatPanel scope={scope} />
+        <OperatorChatPanel scope={scope} />
       </div>
     </div>
   );

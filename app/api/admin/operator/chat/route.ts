@@ -2,8 +2,8 @@ import { type NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
   getLeadById,
-  getOrCreateLeadSteward,
-  getOrCreateAnonymousSteward,
+  getOrCreateLeadOperator,
+  getOrCreateAnonymousOperator,
   getVisibleMessages
 } from '@/lib/db';
 import { requireAdmin, toAuthResponse } from '@/lib/auth';
@@ -11,7 +11,7 @@ import { runAgentTurn } from '@/lib/agent/run';
 
 export const runtime = 'nodejs';
 
-/** Load steward chat history for a lead agent or the anonymous pool agent. */
+/** Load operator chat history for a lead agent or the anonymous pool agent. */
 export async function GET(req: NextRequest) {
   try {
     await requireAdmin();
@@ -20,11 +20,11 @@ export async function GET(req: NextRequest) {
 
     let conv;
     if (scope === 'anonymous') {
-      conv = await getOrCreateAnonymousSteward();
+      conv = await getOrCreateAnonymousOperator();
     } else if (leadId) {
       const lead = await getLeadById(leadId);
       if (!lead) return Response.json({ error: 'not_found' }, { status: 404 });
-      conv = await getOrCreateLeadSteward(leadId);
+      conv = await getOrCreateLeadOperator(leadId);
     } else {
       return Response.json({ error: 'lead_id_or_scope_required' }, { status: 400 });
     }
@@ -61,9 +61,9 @@ export async function POST(req: Request) {
     }
 
     if (parsed.data.scope === 'anonymous') {
-      const conv = await getOrCreateAnonymousSteward();
+      const conv = await getOrCreateAnonymousOperator();
       const result = await runAgentTurn(conv.id, parsed.data.message, {
-        type: 'steward',
+        type: 'operator',
         leadId: null,
         adminId: admin.id,
         adminName: admin.name
@@ -87,9 +87,9 @@ export async function POST(req: Request) {
     const lead = await getLeadById(parsed.data.lead_id);
     if (!lead) return Response.json({ error: 'not_found' }, { status: 404 });
 
-    const conv = await getOrCreateLeadSteward(parsed.data.lead_id);
+    const conv = await getOrCreateLeadOperator(parsed.data.lead_id);
     const result = await runAgentTurn(conv.id, parsed.data.message, {
-      type: 'steward',
+      type: 'operator',
       leadId: parsed.data.lead_id,
       adminId: admin.id,
       adminName: admin.name
@@ -108,7 +108,7 @@ export async function POST(req: Request) {
   } catch (e) {
     const authRes = toAuthResponse(e);
     if (authRes) return authRes;
-    console.error('[admin/steward/chat] failed:', e);
+    console.error('[admin/operator/chat] failed:', e);
     return Response.json({ error: 'agent_error' }, { status: 500 });
   }
 }

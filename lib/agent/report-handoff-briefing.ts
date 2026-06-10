@@ -1,7 +1,7 @@
 /**
  * "Lead reports up": when a handoff rule fires, the lead's own agent produces a
  * concise briefing for the admin and posts it into the main_assistant panel.
- * Replaces the former fire-and-forget steward agent (redundant background work).
+ * Replaces the former fire-and-forget operator agent (redundant background work).
  */
 import { generateText } from 'ai';
 import { FAST_MODEL } from '@/lib/llm';

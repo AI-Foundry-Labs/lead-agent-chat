@@ -1,7 +1,7 @@
 /**
- * Steward lead-management tools — status/potential, qualification, memory, viewings, escalation.
- * Each tool acts on a specific lead: defaults to the steward's scoped lead, or an explicit
- * lead_id (used in pool mode where the steward triages multiple anonymous visitors).
+ * Operator lead-management tools — status/potential, qualification, memory, viewings, escalation.
+ * Each tool acts on a specific lead: defaults to the operator's scoped lead, or an explicit
+ * lead_id (used in pool mode where the operator triages multiple anonymous visitors).
  */
 import { tool } from 'ai';
 import { z } from 'zod';
@@ -13,7 +13,7 @@ import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-te
 import { cancelViewingWithMemory, rescheduleViewingWithMemory } from '@/lib/agent/viewing-actions';
 import type { AgentContext } from './context';
 
-export function buildStewardLeadActions(ctx: AgentContext, scopedLeadId: string | null) {
+export function buildOperatorLeadActions(ctx: AgentContext, scopedLeadId: string | null) {
   const resolveLeadId = (argLeadId?: string) => argLeadId ?? scopedLeadId ?? null;
 
   return {
@@ -24,7 +24,7 @@ export function buildStewardLeadActions(ctx: AgentContext, scopedLeadId: string 
         'Lifecycle status (qualified/booked/handoff/abandoned) requires an identified lead (email/name). ' +
         'Always pass memory_note so the reason is persisted.',
       inputSchema: z.object({
-        lead_id: z.string().optional().describe('Defaults to the steward\'s scoped lead'),
+        lead_id: z.string().optional().describe('Defaults to the operator\'s scoped lead'),
         potential_status: z.enum(['hot', 'warm', 'cold']).optional(),
         status: z.enum(['active', 'qualified', 'booked', 'handoff', 'abandoned']).optional(),
         memory_note: z.string().max(600).optional().describe('Reason for the change — stored in lead memory')
@@ -70,7 +70,7 @@ export function buildStewardLeadActions(ctx: AgentContext, scopedLeadId: string 
       description:
         'Persist qualification values, a computed potential, and a one-line reason for a lead.',
       inputSchema: z.object({
-        lead_id: z.string().optional().describe('Defaults to the steward\'s scoped lead'),
+        lead_id: z.string().optional().describe('Defaults to the operator\'s scoped lead'),
         values: z.record(z.string(), z.string()).describe('criterionKey → value'),
         potential_status: z.enum(['hot', 'warm', 'cold']),
         reason: z.string().max(200)
@@ -102,7 +102,7 @@ export function buildStewardLeadActions(ctx: AgentContext, scopedLeadId: string 
       description:
         'Persist durable facts for a lead: identity, product preferences, purchase status, objections, admin actions.',
       inputSchema: z.object({
-        lead_id: z.string().optional().describe('Defaults to the steward\'s scoped lead'),
+        lead_id: z.string().optional().describe('Defaults to the operator\'s scoped lead'),
         facts: z.array(z.string().max(800)).min(1).max(20)
       }),
       execute: async ({ lead_id, facts }) => {
@@ -153,7 +153,7 @@ export function buildStewardLeadActions(ctx: AgentContext, scopedLeadId: string 
       description:
         'Escalate a lead for human follow-up: marks status=handoff and alerts admins. Use for negotiation, complaints, or sensitive topics.',
       inputSchema: z.object({
-        lead_id: z.string().optional().describe('Defaults to the steward\'s scoped lead'),
+        lead_id: z.string().optional().describe('Defaults to the operator\'s scoped lead'),
         reason: z.string().max(300)
       }),
       execute: async ({ lead_id, reason }) => {
