@@ -1,4 +1,5 @@
-import { getConversation } from '@/lib/db';
+import { getConversation, getLeadById } from '@/lib/db';
+import { isIdentifiedLead } from '@/lib/leads/is-identified-lead';
 import type { Conversation } from '@/lib/types';
 
 export class ConversationAccessError extends Error {
@@ -20,7 +21,14 @@ export async function assertLeadChatAccess(
     throw new ConversationAccessError(404, 'not_found');
   }
   if (conv.lead_id && conv.lead_id !== leadId) {
-    throw new ConversationAccessError(403, 'forbidden');
+    // The conversation gained a lead_id mid-chat (e.g. the agent called ensureLead
+    // during qualification/booking, or an admin acted on it). An anonymous quick-chat
+    // visitor holds the (unguessable) conversation id and still owns the thread until
+    // the lead becomes identified (email/name captured) — only then lock out non-owners.
+    const lead = await getLeadById(conv.lead_id);
+    if (lead && isIdentifiedLead(lead)) {
+      throw new ConversationAccessError(403, 'forbidden');
+    }
   }
   return conv;
 }
