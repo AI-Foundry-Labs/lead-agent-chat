@@ -177,7 +177,7 @@ export function buildLeadTools(ctx: AgentContext) {
           status: 'booked'
         });
         await notifyAdmins(
-          `Viewing booked: ${listing.title} on ${formatSlot(slot_iso)} (${email})`
+          `[Viewing booked] ${listing.title} — ${formatSlot(slot_iso)} — ${contact_name ?? lead.name ?? email}`
         );
         scheduleAppendLeadLongTermFacts(lead.id, [
           `viewing booked: ${listing.title} (${listing.address}) on ${formatSlot(slot_iso)}`,
@@ -204,20 +204,20 @@ export function buildLeadTools(ctx: AgentContext) {
         if (ctx.conversation.lead_id) {
           await updateLead(ctx.conversation.lead_id, { status: 'handoff' });
         }
-        await notifyAdmins(`Handoff requested: ${reason}`);
+        await notifyAdmins(`[Handoff requested] ${reason}`);
         return { ok: true, handed_off: true };
       }
     }),
 
     remember_visitor_fact: tool({
       description:
-        'Persist durable visitor facts for future chats: personal identity/contact OR buy/sell/product/pricing preferences. Do not store transient chit-chat.',
+        'Persist durable visitor facts for future chats: identity/contact, product preferences, purchase status updates (viewing booked/cancelled/attended), objections, admin actions. Be thorough — storage is generous.',
       inputSchema: z.object({
         facts: z
-          .array(z.string().max(300))
+          .array(z.string().max(800))
           .min(1)
-          .max(5)
-          .describe('Short factual bullets, e.g. "Budget: 750k€", "Prefers Marais"')
+          .max(20)
+          .describe('Factual bullets, e.g. "Budget: 750k€", "Viewing cancelled: Montmartre 10 juin — listing no longer available", "Prefers Marais"')
       }),
       execute: async ({ facts }) => {
         const lead = await ensureLead(ctx);

@@ -1,5 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
+import { ilike, or, eq } from 'drizzle-orm';
+import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
 import {
   listLeads,
   getLeadById,
@@ -7,6 +9,7 @@ import {
   getVisibleMessages,
   addMessage,
   updateConversation,
+  updateLead,
   updateCriteria,
   upsertAgencyConfig,
   listListings,
@@ -16,8 +19,18 @@ import {
   listBookedViewings,
   cancelViewing,
   rescheduleViewing,
-  getOrCreateLeadSteward
+  getOrCreateLeadSteward,
+  listConversationsByLeadId,
+  listHandoffRules,
+  createHandoffRule,
+  toggleHandoffRule,
+  deleteHandoffRule,
+  db,
+  messages,
+  leads,
+  conversations
 } from '@/lib/db';
+import { sendTelegramMessage } from '@/lib/telegram';
 import { createCalendarEvent, deleteCalendarEvent, getAvailableSlots } from '@/lib/calendar';
 import { dispatchReply } from '@/lib/dispatch';
 import { broadcastConversationUpdate } from '@/lib/events';
@@ -31,7 +44,9 @@ import type { AgentContext } from './context';
 type RunAgentTurn = (
   conversationId: string,
   message: string,
-  actor: { type: 'lead_steward'; leadId: string; adminId: string; adminName: string | null } | { type: 'lead' }
+  actor: { type: 'lead_steward'; leadId: string; adminId: string; adminName: string | null } | { type: 'lead' },
+  lang?: string,
+  messageRole?: 'user' | 'system'
 ) => Promise<{ reply: string }>;
 
 export function buildMainAssistantTools(
@@ -69,6 +84,114 @@ export function buildMainAssistantTools(
       }
     }),
 
+    search_leads: tool({
+      description: 'Search leads by name or email (partial match, case-insensitive).',
+      inputSchema: z.object({ query: z.string().min(1).max(200) }),
+      execute: async ({ query }) => {
+        const q = `%${query}%`;
+        const rows = await db
+          .select({
+            id: leads.id,
+            email: leads.email,
+            name: leads.name,
+            status: leads.status,
+            potential_status: leads.potential_status,
+            score_reason: leads.score_reason,
+            updated_at: leads.updated_at
+          })
+          .from(leads)
+          .where(or(ilike(leads.email, q), ilike(leads.name, q)))
+          .limit(20);
+        return rows;
+      }
+    }),
+
+    search_messages: tool({
+      description: 'Search for a keyword across all conversation messages. Returns matching messages with lead/conversation context.',
+      inputSchema: z.object({
+        query: z.string().min(1).max(200),
+        limit: z.number().int().min(1).max(30).optional()
+      }),
+      execute: async ({ query, limit }) => {
+        const q = `%${query}%`;
+        const rows = await db
+          .select({
+            message_id: messages.id,
+            conversation_id: messages.conversation_id,
+            role: messages.role,
+            content: messages.content,
+            timestamp: messages.timestamp,
+            lead_id: conversations.lead_id
+          })
+          .from(messages)
+          .innerJoin(conversations, eq(messages.conversation_id, conversations.id))
+          .where(ilike(messages.content, q))
+          .orderBy(messages.timestamp)
+          .limit(limit ?? 15);
+        return rows.map((r) => ({
+          conversation_id: r.conversation_id,
+          lead_id: r.lead_id,
+          role: r.role,
+          excerpt: r.content.slice(0, 300),
+          timestamp: r.timestamp
+        }));
+      }
+    }),
+
+    get_lead_threads: tool({
+      description: 'List all conversation threads for a lead (web, Telegram, steward, etc.).',
+      inputSchema: z.object({ lead_id: z.string() }),
+      execute: async ({ lead_id }) => {
+        const threads = await listConversationsByLeadId(lead_id);
+        return threads.map((t) => ({
+          conversation_id: t.id,
+          type: t.type,
+          channel: t.primary_channel,
+          mode: t.mode,
+          listing_id: t.listing_id,
+          thread_summary: t.thread_summary?.slice(0, 200),
+          updated_at: t.updated_at
+        }));
+      }
+    }),
+
+    update_lead_info: tool({
+      description: 'Update a lead\'s name, email, or status manually.',
+      inputSchema: z.object({
+        lead_id: z.string(),
+        name: z.string().max(255).optional(),
+        email: z.string().email().optional(),
+        status: z.enum(['active', 'qualified', 'booked', 'handoff', 'abandoned']).optional()
+      }),
+      execute: async ({ lead_id, name, email, status }) => {
+        const lead = await getLeadById(lead_id);
+        if (!lead) return { error: 'lead_not_found' };
+        const updated = await updateLead(lead_id, {
+          ...(name !== undefined && { name }),
+          ...(email !== undefined && { email }),
+          ...(status !== undefined && { status })
+        });
+        return { ok: true, id: updated.id, name: updated.name, email: updated.email, status: updated.status };
+      }
+    }),
+
+    get_lead_viewings: tool({
+      description: 'List all viewings for a specific lead.',
+      inputSchema: z.object({ lead_id: z.string() }),
+      execute: async ({ lead_id }) => {
+        const all = await listBookedViewings();
+        const filtered = all.filter((v) => v.lead_id === lead_id);
+        return filtered.map((v) => ({
+          id: v.id,
+          listing_id: v.listing_id,
+          contact_email: v.contact_email,
+          slot: v.confirmed_slot ? formatSlot(v.confirmed_slot.toString()) : null,
+          status: v.status,
+          calendar_event_id: v.calendar_event_id
+        }));
+      }
+    }),
+
     get_lead_detail: tool({
       description: "Read a lead's full profile, qualification state, and conversation messages.",
       inputSchema: z.object({ lead_id: z.string() }),
@@ -95,14 +218,31 @@ export function buildMainAssistantTools(
     }),
 
     send_reply: tool({
-      description: 'Send a message to a lead on their active channel immediately.',
-      inputSchema: z.object({ lead_id: z.string(), content: z.string().min(1) }),
-      execute: async ({ lead_id, content }) => {
+      description:
+        'Directly send a message FROM the admin TO a lead on their active channel. ' +
+        'Use this whenever admin wants to write a specific message to a lead — it is saved as an admin message and dispatched immediately. ' +
+        'Use memory_note to record significant events (e.g. "viewing cancelled — listing no longer available, apology sent") into the lead long-term memory. ' +
+        'Do NOT use trigger_lead_turn for this purpose.',
+      inputSchema: z.object({
+        lead_id: z.string(),
+        content: z.string().min(1),
+        memory_note: z.string().max(600).optional().describe(
+          'Optional: a brief note about WHY this message was sent — stored in lead long-term memory. Use for significant events (cancellations, offers, follow-ups).'
+        )
+      }),
+      execute: async ({ lead_id, content, memory_note }) => {
         const conv = await getConversationByLeadId(lead_id);
         if (!conv) return { error: 'conversation_not_found' };
         await addMessage({ conversation_id: conv.id, role: 'admin', content });
         await dispatchReply(conv, content);
         broadcastConversationUpdate(conv.id);
+        // Persist significant admin contact to lead long-term memory
+        if (memory_note) {
+          const date = new Date().toISOString().slice(0, 10);
+          scheduleAppendLeadLongTermFacts(lead_id, [
+            `ADMIN ACTION — ${date}: ${memory_note}`
+          ]);
+        }
         return { ok: true, sent: true };
       }
     }),
@@ -204,17 +344,30 @@ export function buildMainAssistantTools(
 
     cancel_viewing: tool({
       description: 'Cancel a booked viewing and delete the calendar event.',
-      inputSchema: z.object({ viewing_id: z.string() }),
-      execute: async ({ viewing_id }) => {
+      inputSchema: z.object({
+        viewing_id: z.string(),
+        reason: z.string().max(300).optional().describe('Reason for cancellation — stored in lead memory')
+      }),
+      execute: async ({ viewing_id, reason }) => {
         const viewings = await listBookedViewings();
         const v = viewings.find((x) => x.id === viewing_id);
         if (!v) return { error: 'viewing_not_found' };
+        const listing = v.listing_id ? await getListing(v.listing_id) : null;
         if (v.calendar_event_id) {
-          const listing = v.listing_id ? await getListing(v.listing_id) : null;
           const calendarId = listing?.agent_calendar_id || ctx.config.calendar_id;
           await deleteCalendarEvent({ calendarId, eventId: v.calendar_event_id });
         }
         await cancelViewing(viewing_id);
+        // Update lead long-term memory with cancellation event
+        if (v.lead_id) {
+          const slotLabel = v.confirmed_slot ? formatSlot(v.confirmed_slot.toString()) : 'unknown slot';
+          const listingLabel = listing?.title ?? v.listing_id ?? 'unknown listing';
+          const facts = [
+            `PURCHASE STATUS — Viewing CANCELLED: ${listingLabel} at ${slotLabel}${reason ? ` — reason: ${reason}` : ''}`,
+            `ADMIN ACTION — Admin cancelled viewing on ${new Date().toISOString().slice(0, 10)}${reason ? `: ${reason}` : ''}`
+          ];
+          scheduleAppendLeadLongTermFacts(v.lead_id, facts);
+        }
         return { ok: true, cancelled: true };
       }
     }),
@@ -241,6 +394,14 @@ export function buildMainAssistantTools(
           });
         }
         await rescheduleViewing(viewing_id, new_slot_iso, newCalendarEventId);
+        // Update lead long-term memory with reschedule event
+        if (v.lead_id) {
+          const listingLabel = listing?.title ?? v.listing_id ?? 'unknown listing';
+          const oldSlot = v.confirmed_slot ? formatSlot(v.confirmed_slot.toString()) : 'unknown';
+          scheduleAppendLeadLongTermFacts(v.lead_id, [
+            `PURCHASE STATUS — Viewing RESCHEDULED: ${listingLabel} from ${oldSlot} to ${formatSlot(new_slot_iso)}`
+          ]);
+        }
         return { ok: true, new_slot: formatSlot(new_slot_iso) };
       }
     }),
@@ -338,14 +499,167 @@ export function buildMainAssistantTools(
 
     trigger_lead_turn: tool({
       description:
-        'Inject a message into a lead conversation and run the lead agent. Use to have the bot send a specific response.',
+        'Make the lead AI agent autonomously generate and send a response in a conversation. ' +
+        'The injected message is an INTERNAL instruction to the bot — it is NOT sent to the lead and does NOT appear as a user message. ' +
+        'Use ONLY when you want the bot to decide what to say on its own (e.g. re-engage, follow up). ' +
+        'To send a specific message you wrote yourself, use send_reply instead.',
       inputSchema: z.object({
         conversation_id: z.string(),
-        message: z.string().min(1).max(1000)
+        message: z.string().min(1).max(1000).describe('Internal instruction for the lead agent — not visible to the lead')
       }),
       execute: async ({ conversation_id, message }) => {
-        const result = await runAgentTurn(conversation_id, message, { type: 'lead' });
+        // messageRole 'system' keeps the injected instruction out of the lead's visible chat
+        const result = await runAgentTurn(conversation_id, message, { type: 'lead' }, 'fr', 'system');
         return { ok: true, reply: result.reply };
+      }
+    }),
+
+    // ─── Bulk Follow-up ────────────────────────────────────────────────────
+
+    bulk_follow_up: tool({
+      description:
+        'Send a follow-up message to all hot/warm leads whose last conversation activity exceeds a given number of days. Returns list of leads messaged.',
+      inputSchema: z.object({
+        message: z.string().min(1).max(1000).describe('Message to send to each lead'),
+        potential: z.enum(['hot', 'warm']).optional().describe('Filter by potential — omit for both'),
+        inactive_days: z.number().int().min(1).max(90).default(7).describe('Minimum days since last activity')
+      }),
+      execute: async ({ message, potential, inactive_days }) => {
+        const cutoff = new Date(Date.now() - inactive_days * 24 * 60 * 60 * 1000);
+        let allLeads = await listLeads();
+        if (potential) allLeads = allLeads.filter((l) => l.potential_status === potential);
+        else allLeads = allLeads.filter((l) => l.potential_status === 'hot' || l.potential_status === 'warm');
+        // Only active/qualified leads (not already booked/abandoned)
+        allLeads = allLeads.filter((l) => l.status === 'active' || l.status === 'qualified');
+
+        const results: { lead_id: string; email: string | null; name: string | null; sent: boolean; reason?: string }[] = [];
+        for (const lead of allLeads) {
+          const conv = await getConversationByLeadId(lead.id);
+          if (!conv) { results.push({ lead_id: lead.id, email: lead.email, name: lead.name, sent: false, reason: 'no_conversation' }); continue; }
+          const lastActivity = conv.updated_at ? new Date(conv.updated_at) : null;
+          if (lastActivity && lastActivity >= cutoff) { results.push({ lead_id: lead.id, email: lead.email, name: lead.name, sent: false, reason: 'recently_active' }); continue; }
+          await addMessage({ conversation_id: conv.id, role: 'admin', content: message });
+          await dispatchReply(conv, message);
+          broadcastConversationUpdate(conv.id);
+          results.push({ lead_id: lead.id, email: lead.email, name: lead.name, sent: true });
+        }
+        const sent = results.filter((r) => r.sent).length;
+        return { total_contacted: sent, skipped: results.length - sent, details: results };
+      }
+    }),
+
+    // ─── Listing Performance ────────────────────────────────────────────────
+
+    listing_performance: tool({
+      description:
+        'Report on each listing: number of leads, qualification rate, bookings, and estimated pipeline value.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        const [allLeads, allViewings, allListings] = await Promise.all([
+          listLeads(),
+          listBookedViewings(),
+          listListings()
+        ]);
+        return allListings.map((listing) => {
+          const listingLeads = allLeads.filter((l) => l.listing_id === listing.id);
+          const bookings = allViewings.filter((v) => v.listing_id === listing.id && v.status !== 'cancelled');
+          const hot = listingLeads.filter((l) => l.potential_status === 'hot').length;
+          const warm = listingLeads.filter((l) => l.potential_status === 'warm').length;
+          const qualified = listingLeads.filter((l) => l.status === 'qualified' || l.status === 'booked').length;
+          const conversionRate = listingLeads.length > 0
+            ? `${Math.round((bookings.length / listingLeads.length) * 100)}%`
+            : '—';
+          return {
+            listing_id: listing.id,
+            title: listing.title,
+            price: formatPrice(listing.price),
+            total_leads: listingLeads.length,
+            hot,
+            warm,
+            qualified,
+            viewings_booked: bookings.length,
+            conversion_rate: conversionRate
+          };
+        });
+      }
+    }),
+
+    // ─── Handoff Rules Management ───────────────────────────────────────────
+
+    list_handoff_rules: tool({
+      description: 'List all handoff/escalation rules (active and inactive).',
+      inputSchema: z.object({}),
+      execute: async () => {
+        const rules = await listHandoffRules();
+        return rules.map((r) => ({
+          id: r.id,
+          description: r.description,
+          trigger_keywords: r.trigger_keywords,
+          active: r.active
+        }));
+      }
+    }),
+
+    create_handoff_rule: tool({
+      description: 'Create a new handoff rule. When a lead message matches any keyword, admins are alerted.',
+      inputSchema: z.object({
+        description: z.string().min(1).max(255).describe('Human-readable description of when this rule fires'),
+        trigger_keywords: z.array(z.string().min(1)).min(1).describe('Keywords that trigger this rule')
+      }),
+      execute: async ({ description, trigger_keywords }) => {
+        const rule = await createHandoffRule({ description, trigger_keywords });
+        return { ok: true, id: rule.id, description: rule.description, active: rule.active };
+      }
+    }),
+
+    toggle_handoff_rule: tool({
+      description: 'Activate or deactivate a handoff rule by ID.',
+      inputSchema: z.object({
+        rule_id: z.string(),
+        active: z.boolean()
+      }),
+      execute: async ({ rule_id, active }) => {
+        const rule = await toggleHandoffRule(rule_id, active);
+        return { ok: true, id: rule.id, description: rule.description, active: rule.active };
+      }
+    }),
+
+    delete_handoff_rule: tool({
+      description: 'Permanently delete a handoff rule.',
+      inputSchema: z.object({ rule_id: z.string() }),
+      execute: async ({ rule_id }) => {
+        await deleteHandoffRule(rule_id);
+        return { ok: true, deleted: rule_id };
+      }
+    }),
+
+    // ─── Telegram Broadcast ─────────────────────────────────────────────────
+
+    telegram_broadcast: tool({
+      description:
+        'Send a message to all leads who have Telegram linked. Optionally filter by potential status or listing.',
+      inputSchema: z.object({
+        message: z.string().min(1).max(1000),
+        potential: z.enum(['hot', 'warm', 'cold']).optional(),
+        listing_id: z.string().optional()
+      }),
+      execute: async ({ message, potential, listing_id }) => {
+        let allLeads = await listLeads();
+        allLeads = allLeads.filter((l) => !!l.telegram_user_id);
+        if (potential) allLeads = allLeads.filter((l) => l.potential_status === potential);
+        if (listing_id) allLeads = allLeads.filter((l) => l.listing_id === listing_id);
+
+        const results: { lead_id: string; name: string | null; sent: boolean }[] = [];
+        for (const lead of allLeads) {
+          try {
+            await sendTelegramMessage(lead.telegram_user_id!, message);
+            results.push({ lead_id: lead.id, name: lead.name, sent: true });
+          } catch {
+            results.push({ lead_id: lead.id, name: lead.name, sent: false });
+          }
+        }
+        const sent = results.filter((r) => r.sent).length;
+        return { total_sent: sent, failed: results.length - sent, details: results };
       }
     }),
 
