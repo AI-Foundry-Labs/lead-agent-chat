@@ -2,6 +2,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { ilike, or, eq } from 'drizzle-orm';
 import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
+import { cancelViewingWithMemory, rescheduleViewingWithMemory } from '@/lib/agent/viewing-actions';
 import {
   listLeads,
   getLeadById,
@@ -17,8 +18,6 @@ import {
   createListing,
   updateListing,
   listBookedViewings,
-  cancelViewing,
-  rescheduleViewing,
   getOrCreateLeadSteward,
   listConversationsByLeadId,
   listHandoffRules,
@@ -31,7 +30,7 @@ import {
   conversations
 } from '@/lib/db';
 import { sendTelegramMessage } from '@/lib/telegram';
-import { createCalendarEvent, deleteCalendarEvent, getAvailableSlots } from '@/lib/calendar';
+import { getAvailableSlots } from '@/lib/calendar';
 import { dispatchReply } from '@/lib/dispatch';
 import { broadcastConversationUpdate } from '@/lib/events';
 import { notifyAdmins } from '@/lib/notify';
@@ -44,7 +43,7 @@ import type { AgentContext } from './context';
 type RunAgentTurn = (
   conversationId: string,
   message: string,
-  actor: { type: 'lead_steward'; leadId: string; adminId: string; adminName: string | null } | { type: 'lead' },
+  actor: { type: 'steward'; leadId: string | null; adminId: string; adminName: string | null } | { type: 'lead' },
   lang?: string,
   messageRole?: 'user' | 'system'
 ) => Promise<{ reply: string }>;
@@ -377,62 +376,15 @@ export function buildMainAssistantTools(
         viewing_id: z.string(),
         reason: z.string().max(300).optional().describe('Reason for cancellation — stored in lead memory')
       }),
-      execute: async ({ viewing_id, reason }) => {
-        const viewings = await listBookedViewings();
-        const v = viewings.find((x) => x.id === viewing_id);
-        if (!v) return { error: 'viewing_not_found' };
-        const listing = v.listing_id ? await getListing(v.listing_id) : null;
-        if (v.calendar_event_id) {
-          const calendarId = listing?.agent_calendar_id || ctx.config.calendar_id;
-          await deleteCalendarEvent({ calendarId, eventId: v.calendar_event_id });
-        }
-        await cancelViewing(viewing_id);
-        // Update lead long-term memory with cancellation event
-        if (v.lead_id) {
-          const slotLabel = v.confirmed_slot ? formatSlot(v.confirmed_slot.toString()) : 'unknown slot';
-          const listingLabel = listing?.title ?? v.listing_id ?? 'unknown listing';
-          const facts = [
-            `PURCHASE STATUS — Viewing CANCELLED: ${listingLabel} at ${slotLabel}${reason ? ` — reason: ${reason}` : ''}`,
-            `ADMIN ACTION — Admin cancelled viewing on ${new Date().toISOString().slice(0, 10)}${reason ? `: ${reason}` : ''}`
-          ];
-          scheduleAppendLeadLongTermFacts(v.lead_id, facts);
-        }
-        return { ok: true, cancelled: true };
-      }
+      execute: async ({ viewing_id, reason }) =>
+        cancelViewingWithMemory(viewing_id, ctx.config.calendar_id, reason)
     }),
 
     reschedule_viewing: tool({
       description: 'Reschedule a booked viewing to a new slot. Use list_available_slots first.',
       inputSchema: z.object({ viewing_id: z.string(), new_slot_iso: z.string() }),
-      execute: async ({ viewing_id, new_slot_iso }) => {
-        const viewings = await listBookedViewings();
-        const v = viewings.find((x) => x.id === viewing_id);
-        if (!v) return { error: 'viewing_not_found' };
-        const listing = v.listing_id ? await getListing(v.listing_id) : null;
-        const calendarId = listing?.agent_calendar_id || ctx.config.calendar_id;
-        if (v.calendar_event_id) {
-          await deleteCalendarEvent({ calendarId, eventId: v.calendar_event_id });
-        }
-        let newCalendarEventId: string | null = null;
-        if (listing && v.contact_email) {
-          newCalendarEventId = await createCalendarEvent({
-            calendarId,
-            slotIso: new_slot_iso,
-            contactEmail: v.contact_email,
-            listing
-          });
-        }
-        await rescheduleViewing(viewing_id, new_slot_iso, newCalendarEventId);
-        // Update lead long-term memory with reschedule event
-        if (v.lead_id) {
-          const listingLabel = listing?.title ?? v.listing_id ?? 'unknown listing';
-          const oldSlot = v.confirmed_slot ? formatSlot(v.confirmed_slot.toString()) : 'unknown';
-          scheduleAppendLeadLongTermFacts(v.lead_id, [
-            `PURCHASE STATUS — Viewing RESCHEDULED: ${listingLabel} from ${oldSlot} to ${formatSlot(new_slot_iso)}`
-          ]);
-        }
-        return { ok: true, new_slot: formatSlot(new_slot_iso) };
-      }
+      execute: async ({ viewing_id, new_slot_iso }) =>
+        rescheduleViewingWithMemory(viewing_id, new_slot_iso, ctx.config.calendar_id)
     }),
 
     list_available_slots: tool({
@@ -517,7 +469,7 @@ export function buildMainAssistantTools(
           ? `${question} Please review this lead's full profile and give a concise briefing.`
           : `Please review this lead's full profile and conversation history. Give me a concise briefing: who they are, what they want, their qualification status, and recommended next action.`;
         const result = await runAgentTurn(stewardConv.id, prompt, {
-          type: 'lead_steward',
+          type: 'steward',
           leadId: lead_id,
           adminId,
           adminName

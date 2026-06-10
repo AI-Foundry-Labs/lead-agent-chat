@@ -36,10 +36,7 @@ export async function dispatchReply(
   }
 
   // Admin-facing agents push replies to the admin's Telegram chat.
-  if (
-    (conversation.type === 'admin_assistant' || conversation.type === 'main_assistant') &&
-    conversation.admin_id
-  ) {
+  if (conversation.type === 'main_assistant' && conversation.admin_id) {
     const rows = await db
       .select({ telegram_user_id: admins.telegram_user_id })
       .from(admins)
@@ -58,10 +55,7 @@ export async function dispatchUserMessage(
   content: string
 ): Promise<void> {
   if (!content.trim()) return;
-  if (
-    (conversation.type === 'admin_assistant' || conversation.type === 'main_assistant') &&
-    conversation.admin_id
-  ) {
+  if (conversation.type === 'main_assistant' && conversation.admin_id) {
     const rows = await db
       .select({ telegram_user_id: admins.telegram_user_id })
       .from(admins)

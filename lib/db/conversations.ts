@@ -52,23 +52,6 @@ export async function getConversation(id: string): Promise<Conversation | null> 
   return rows[0] ? rowToConversation(rows[0]) : null;
 }
 
-export async function getAdminAssistantConversation(
-  adminId: string
-): Promise<Conversation | null> {
-  const rows = await db
-    .select()
-    .from(conversations)
-    .where(
-      and(
-        eq(conversations.type, 'admin_assistant'),
-        eq(conversations.admin_id, adminId)
-      )
-    )
-    .orderBy(desc(conversations.updated_at))
-    .limit(1);
-  return rows[0] ? rowToConversation(rows[0]) : null;
-}
-
 export async function getConversationByLeadId(
   leadId: string
 ): Promise<Conversation | null> {
@@ -110,19 +93,6 @@ export async function claimConversationsForLead(
     claimed.push(id);
   }
   return claimed;
-}
-
-export async function getOrCreateAdminAssistant(
-  adminId: string
-): Promise<Conversation> {
-  return (
-    (await getAdminAssistantConversation(adminId)) ??
-    (await createConversation({
-      type: 'admin_assistant',
-      admin_id: adminId,
-      primary_channel: 'web'
-    }))
-  );
 }
 
 export async function getMainAssistantConversation(
@@ -225,7 +195,7 @@ export async function getLeadStewardConversation(
     .select()
     .from(conversations)
     .where(
-      and(eq(conversations.type, 'lead_steward'), eq(conversations.lead_id, leadId))
+      and(eq(conversations.type, 'steward'), eq(conversations.lead_id, leadId))
     )
     .limit(1);
   return rows[0] ? rowToConversation(rows[0]) : null;
@@ -235,19 +205,19 @@ export async function getOrCreateLeadSteward(leadId: string): Promise<Conversati
   return (
     (await getLeadStewardConversation(leadId)) ??
     (await createConversation({
-      type: 'lead_steward',
+      type: 'steward',
       lead_id: leadId,
       primary_channel: 'web'
     }))
   );
 }
 
-/** Singleton admin agent for all anonymous / unidentified visitors. */
+/** Singleton steward for the anonymous / unidentified visitor pool (lead_id IS NULL). */
 export async function getAnonymousStewardConversation(): Promise<Conversation | null> {
   const rows = await db
     .select()
     .from(conversations)
-    .where(eq(conversations.type, 'anonymous_steward'))
+    .where(and(eq(conversations.type, 'steward'), isNull(conversations.lead_id)))
     .limit(1);
   return rows[0] ? rowToConversation(rows[0]) : null;
 }
@@ -256,7 +226,7 @@ export async function getOrCreateAnonymousSteward(): Promise<Conversation> {
   return (
     (await getAnonymousStewardConversation()) ??
     (await createConversation({
-      type: 'anonymous_steward',
+      type: 'steward',
       primary_channel: 'web'
     }))
   );

@@ -63,7 +63,8 @@ export async function POST(req: Request) {
     if (parsed.data.scope === 'anonymous') {
       const conv = await getOrCreateAnonymousSteward();
       const result = await runAgentTurn(conv.id, parsed.data.message, {
-        type: 'anonymous_steward',
+        type: 'steward',
+        leadId: null,
         adminId: admin.id,
         adminName: admin.name
       });
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
 
     const conv = await getOrCreateLeadSteward(parsed.data.lead_id);
     const result = await runAgentTurn(conv.id, parsed.data.message, {
-      type: 'lead_steward',
+      type: 'steward',
       leadId: parsed.data.lead_id,
       adminId: admin.id,
       adminName: admin.name

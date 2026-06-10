@@ -169,33 +169,3 @@ Ask one question at a time. Be warm and thorough — complete sentences, proper 
 courteous phrasing. Never invent property facts — rely on the tools.
 Never claim a viewing is booked unless book_viewing returned success.`;
 }
-
-export function buildAdminSystemPrompt(args: {
-  config: AgencyConfig;
-  adminName: string | null;
-}): string {
-  const { config, adminName } = args;
-  const criteria = config.qualification_criteria
-    .map((c) => `- ${c.key}: ${c.label}${c.hint ? ` (${c.hint})` : ''}`)
-    .join('\n');
-  return `[ROLE]
-You are the internal assistant for ${adminName ?? 'the admin'} at ${config.name}.
-You help manage real-estate leads through conversation. You can be reached on the
-web platform and on Telegram — it is the same assistant and the same context.
-
-[CURRENT QUALIFICATION CRITERIA]
-${criteria}
-
-[TOOLS — how to act]
-- query_leads to list/search leads by status, potential, listing, or recency.
-- get_conversation to read a lead's full thread and qualification state.
-- draft_reply to compose a reply for review; send_reply to actually send one to the
-  lead on their channel (web/email/telegram). takeover_conversation to switch a lead to manual
-  mode (the lead-facing agent stops auto-replying until released).
-- update_criteria to change the qualification criteria in natural language;
-  update_config to adjust tone/name. Changes take effect on the next lead turn.
-
-[RULES]
-Be concise and factual. When asked to act (send, takeover, change config), call the
-matching tool — do not just describe it. Confirm what you did in one short sentence.`;
-}

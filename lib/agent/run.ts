@@ -17,20 +17,15 @@ import { broadcastConversationUpdate } from '@/lib/events';
 import { dispatchReply } from '@/lib/dispatch';
 import { notifyAdmins, notifyAdminsInChat } from '@/lib/notify';
 import { matchRule } from '@/lib/agent/rules';
-import { buildLeadSystemPrompt, buildAdminSystemPrompt } from '@/lib/agent/prompts';
-import {
-  buildLeadStewardSystemPrompt,
-  buildAnonymousStewardSystemPrompt
-} from '@/lib/agent/prompts/steward-prompts';
+import { buildLeadSystemPrompt } from '@/lib/agent/prompts';
+import { buildStewardSystemPrompt } from '@/lib/agent/prompts/steward-prompts';
 import { buildCrossThreadContextBlock } from '@/lib/agent/cross-thread-context';
 import {
   buildThreadContextMessages,
   scheduleThreadMemorySummarize
 } from '@/lib/agent/thread-memory';
 import { buildLeadTools } from '@/lib/agent/tools/lead-tools';
-import { buildAdminTools } from '@/lib/agent/tools/admin-tools';
-import { buildLeadStewardTools } from '@/lib/agent/tools/lead-steward-tools';
-import { buildAnonymousStewardTools } from '@/lib/agent/tools/anonymous-steward-tools';
+import { buildStewardTools } from '@/lib/agent/tools/steward-tools';
 import { buildMainAssistantTools } from '@/lib/agent/tools/main-assistant-tools';
 import { buildMainAssistantSystemPrompt } from '@/lib/agent/prompts/main-assistant-prompt';
 import type { AgentContext } from '@/lib/agent/tools/context';
@@ -38,9 +33,7 @@ import type { Conversation, Language } from '@/lib/types';
 
 export type Actor =
   | { type: 'lead' }
-  | { type: 'admin'; adminId: string; adminName: string | null }
-  | { type: 'lead_steward'; leadId: string; adminId: string; adminName: string | null }
-  | { type: 'anonymous_steward'; adminId: string; adminName: string | null }
+  | { type: 'steward'; leadId: string | null; adminId: string; adminName: string | null }
   | { type: 'main_assistant'; adminId: string; adminName: string | null };
 
 export type TurnStatus = 'replied' | 'manual' | 'handoff';
@@ -55,7 +48,6 @@ const MAX_STEPS = 6;
 
 function shouldDispatchReply(conversation: Conversation): boolean {
   if (conversation.type === 'lead') return true;
-  if (conversation.type === 'admin_assistant') return true;
   if (conversation.type === 'main_assistant') return true;
   return false;
 }
@@ -136,10 +128,12 @@ export async function runAgentTurn(
                 `La règle d'escalade suivante vient d'être déclenchée : « ${ruleName} ».\n\n` +
                 `Le prospect vient d'envoyer le message suivant :\n« ${triggerMsg.slice(0, 400)} »\n\n` +
                 `Merci de consulter le profil complet de ce prospect ainsi que l'historique de ses échanges, ` +
-                `puis de me fournir un briefing détaillé : qui est ce client, quels sont ses besoins, ` +
+                `puis : (1) réévaluez le potentiel (hot/warm/cold) et le statut du prospect via update_lead_status ` +
+                `si l'échange révèle un changement d'intention, (2) consignez les faits durables via remember_visitor_fact, ` +
+                `(3) fournissez-moi un briefing détaillé : qui est ce client, quels sont ses besoins, ` +
                 `pourquoi cette situation nécessite-t-elle l'intervention d'un conseiller humain, ` +
                 `et quelle est la prochaine action recommandée ?`,
-                { type: 'lead_steward', leadId, adminId: adminRow.id, adminName: adminRow.name },
+                { type: 'steward', leadId, adminId: adminRow.id, adminName: adminRow.name },
                 'fr',
                 'system'
               );
@@ -160,26 +154,16 @@ export async function runAgentTurn(
   if (actor.type === 'main_assistant') {
     system = await buildMainAssistantSystemPrompt({ config, adminName: actor.adminName });
     tools = buildMainAssistantTools(ctx, actor.adminId, actor.adminName, runAgentTurn as Parameters<typeof buildMainAssistantTools>[3]);
-  } else if (actor.type === 'admin') {
-    system = buildAdminSystemPrompt({ config, adminName: actor.adminName });
-    tools = buildAdminTools(ctx);
-  } else if (actor.type === 'lead_steward') {
-    const lead = await getLeadById(actor.leadId);
-    if (!lead) throw new Error('lead_not_found');
-    system = await buildLeadStewardSystemPrompt({
+  } else if (actor.type === 'steward') {
+    const lead = actor.leadId ? await getLeadById(actor.leadId) : null;
+    if (actor.leadId && !lead) throw new Error('lead_not_found');
+    system = await buildStewardSystemPrompt({
       config,
       lead,
       adminName: actor.adminName,
       lang
     });
-    tools = buildLeadStewardTools(ctx, actor.leadId);
-  } else if (actor.type === 'anonymous_steward') {
-    system = await buildAnonymousStewardSystemPrompt({
-      config,
-      adminName: actor.adminName,
-      lang
-    });
-    tools = buildAnonymousStewardTools(ctx);
+    tools = buildStewardTools(ctx, actor.leadId);
   } else {
     const listing = await getListing(conversation.listing_id);
     const lead = conversation.lead_id

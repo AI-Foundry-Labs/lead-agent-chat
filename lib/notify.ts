@@ -1,5 +1,5 @@
 import { db, admins } from '@/lib/db/client';
-import { getOrCreateAdminAssistant } from '@/lib/db/conversations';
+import { getOrCreateMainAssistant } from '@/lib/db/conversations';
 import { addMessage } from '@/lib/db/messages';
 import { broadcastConversationUpdate } from '@/lib/events';
 import { sendToLinkedAdmins } from '@/lib/telegram';
@@ -26,7 +26,7 @@ export async function notifyAdminsInChat(message: string): Promise<void> {
   }
   await Promise.allSettled(
     adminRows.map(async ({ id }) => {
-      const conv = await getOrCreateAdminAssistant(id);
+      const conv = await getOrCreateMainAssistant(id);
       await addMessage({ conversation_id: conv.id, role: 'assistant', content: message });
       broadcastConversationUpdate(conv.id);
     })
