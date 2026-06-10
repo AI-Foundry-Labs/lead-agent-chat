@@ -96,6 +96,9 @@ export function ChatPanel({
         body: JSON.stringify({ conversationId, listingId, message: text })
       });
       const data = await res.json();
+      if (!res.ok) {
+        console.error('[chat] POST /api/chat', res.status, data);
+      }
       if (data.conversationId && !conversationId) {
         setConversationId(data.conversationId);
         if (trackForClaim) addPendingConversationId(data.conversationId);

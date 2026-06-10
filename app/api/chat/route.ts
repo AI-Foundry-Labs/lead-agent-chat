@@ -2,11 +2,12 @@ import { type NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
   createConversation,
+  getConversation,
   getVisibleMessages,
   getActiveViewing,
   updateConversation
 } from '@/lib/db';
-import { getLeadIdFromCookies } from '@/lib/auth';
+import { getLeadIdFromCookies, setLeadCookie } from '@/lib/auth';
 import {
   assertLeadChatAccess,
   toConversationAccessResponse
@@ -92,6 +93,17 @@ export async function POST(req: NextRequest) {
   try {
     const lang = await getLang();
     const result = await runAgentTurn(conv.id, message, { type: 'lead' }, lang);
+
+    // If the agent created/attached a lead during this turn (e.g. via ensureLead
+    // during booking), the visitor's cookie is still anonymous. Refresh the
+    // conversation and set the lead cookie so subsequent requests aren't 403'd.
+    if (!leadId) {
+      const refreshed = await getConversation(conv.id);
+      if (refreshed?.lead_id) {
+        await setLeadCookie(refreshed.lead_id);
+      }
+    }
+
     return Response.json({
       conversationId: conv.id,
       reply: result.reply,

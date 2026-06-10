@@ -27,6 +27,11 @@ export async function assertLeadChatAccess(
     // the lead becomes identified (email/name captured) — only then lock out non-owners.
     const lead = await getLeadById(conv.lead_id);
     if (lead && isIdentifiedLead(lead)) {
+      console.warn(
+        '[access] 403 forbidden: conv', conversationId,
+        'lead', conv.lead_id, 'session_lead', leadId,
+        'email', lead.email ? '(set)' : '(none)'
+      );
       throw new ConversationAccessError(403, 'forbidden');
     }
   }
