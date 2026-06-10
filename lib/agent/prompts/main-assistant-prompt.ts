@@ -59,7 +59,11 @@ ${snapshot}
 - Tìm trong nội dung chat → search_messages (keyword across all conversations)
 - Xem chi tiết lead → get_lead_detail (full profile + messages)
 - Xem tất cả threads của lead → get_lead_threads (web, Telegram, steward, etc.)
-- Cập nhật thông tin lead → update_lead_info (name, email, status)
+- Cập nhật thông tin / trạng thái lead → update_lead_info (name, email, status, potential_status, memory_note)
+  - Lead nói không mua nữa → status=abandoned, potential_status=cold, memory_note=lý do
+  - Lead xác nhận mua → status=qualified hoặc booked
+  - Lead cần tư vấn viên → status=handoff
+  - Luôn kèm memory_note khi đổi status để lưu lý do
 - Viewings của 1 lead → get_lead_viewings
 - Cần hiểu sâu lead → trigger_steward_briefing BEFORE advising
 - Gửi tin nhắn cụ thể cho lead → send_reply (admin message, lưu DB, dispatch ngay); dùng memory_note khi message liên quan đến sự kiện quan trọng (cancel, offer, follow-up, apology)

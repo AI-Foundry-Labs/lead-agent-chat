@@ -156,22 +156,51 @@ export function buildMainAssistantTools(
     }),
 
     update_lead_info: tool({
-      description: 'Update a lead\'s name, email, or status manually.',
+      description:
+        'Update a lead\'s profile fields and/or system status. ' +
+        'Use proactively when you learn significant facts: lead says they won\'t buy → status=abandoned; ' +
+        'lead confirms purchase → status=qualified or booked; lead needs human → status=handoff. ' +
+        'Always pass memory_note when changing status so the reason is persisted.',
       inputSchema: z.object({
         lead_id: z.string(),
         name: z.string().max(255).optional(),
         email: z.string().email().optional(),
-        status: z.enum(['active', 'qualified', 'booked', 'handoff', 'abandoned']).optional()
+        status: z.enum(['active', 'qualified', 'booked', 'handoff', 'abandoned'])
+          .optional()
+          .describe('New lifecycle status — set abandoned when lead confirms they will not purchase'),
+        potential_status: z.enum(['hot', 'warm', 'cold'])
+          .optional()
+          .describe('New potential tier — update when intent clearly changes (e.g. cold after abandonment)'),
+        memory_note: z.string().max(600)
+          .optional()
+          .describe('Reason for the change — stored in lead long-term memory (e.g. "lead said they found another property and are no longer interested")')
       }),
-      execute: async ({ lead_id, name, email, status }) => {
+      execute: async ({ lead_id, name, email, status, potential_status, memory_note }) => {
         const lead = await getLeadById(lead_id);
         if (!lead) return { error: 'lead_not_found' };
         const updated = await updateLead(lead_id, {
           ...(name !== undefined && { name }),
           ...(email !== undefined && { email }),
-          ...(status !== undefined && { status })
+          ...(status !== undefined && { status }),
+          ...(potential_status !== undefined && { potential_status })
         });
-        return { ok: true, id: updated.id, name: updated.name, email: updated.email, status: updated.status };
+        // Persist reason to long-term memory when status/potential changes
+        if (memory_note) {
+          const date = new Date().toISOString().slice(0, 10);
+          const statusNote = status ? `status→${status}` : '';
+          const potentialNote = potential_status ? ` potential→${potential_status}` : '';
+          scheduleAppendLeadLongTermFacts(lead_id, [
+            `PURCHASE STATUS — ${date}: ${statusNote}${potentialNote}. ${memory_note}`
+          ]);
+        }
+        return {
+          ok: true,
+          id: updated.id,
+          name: updated.name,
+          email: updated.email,
+          status: updated.status,
+          potential_status: updated.potential_status
+        };
       }
     }),
 
