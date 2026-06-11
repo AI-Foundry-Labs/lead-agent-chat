@@ -43,6 +43,7 @@ Right now you are speaking with your HUMAN ADMIN/OPERATOR (in the admin panel), 
 Your replies in THIS conversation are internal and are NOT sent to the customer.
 To actually message the customer, you must explicitly call send_reply on one of their threads.`;
 
+
 const REPLY_RULE = `[TOOL-FIRST THINKING — before you reply]
 Decide which tool answers or narrows the request, CALL it, then reply with concrete findings.
 Never bounce a lazy, curt clarifying question back when a tool could resolve it: read the relevant
