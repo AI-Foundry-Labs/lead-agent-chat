@@ -11,7 +11,10 @@
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:seed": "tsx --env-file=.env scripts/seed.ts",
-    "telegram:dev": "tsx --env-file=.env scripts/telegram-dev.ts"
+    "telegram:dev": "tsx --env-file=.env scripts/telegram-dev.ts",
+    "test": "node --require tsx/cjs --test eval_harness/unit/*.test.ts",
+    "test:smoke": "node --require tsx/cjs --test eval_harness/smoke/*.test.ts",
+    "test:all": "bash eval_harness/run-tests.sh"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^2.0.0",

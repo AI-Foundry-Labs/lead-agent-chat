@@ -231,7 +231,13 @@ export async function runAgentTurn(
 
   broadcastConversationUpdate(conversationId);
   if (shouldDispatchReply(ctx.conversation)) {
-    await dispatchReply(ctx.conversation, storedContent);
+    // Don't dispatch the generic error fallback to external channels (Telegram) for
+    // non-lead conversations — the admin already sees it in the web UI. For lead
+    // conversations, always dispatch so the visitor gets a response on every channel.
+    const shouldDispatchContent = reply.trim() || ctx.conversation.type === 'lead';
+    if (shouldDispatchContent) {
+      await dispatchReply(ctx.conversation, storedContent);
+    }
   }
 
   if (actor.type === 'lead') {

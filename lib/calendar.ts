@@ -19,15 +19,38 @@ function isWeekday(d: Date) {
   return w !== 0 && w !== 6;
 }
 
+// Return the UTC offset (in hours) for Europe/Paris at the given date.
+// CEST (summer) = UTC+2; CET (winter) = UTC+1.
+function parisUtcOffset(d: Date): number {
+  // Use Intl to determine the actual Paris offset for this date.
+  const parisFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Paris',
+    hour: 'numeric',
+    hour12: false
+  });
+  const utcFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    hour: 'numeric',
+    hour12: false
+  });
+  const parisHour = parseInt(parisFmt.format(d), 10);
+  const utcHour = parseInt(utcFmt.format(d), 10);
+  let offset = parisHour - utcHour;
+  if (offset > 12) offset -= 24;
+  if (offset < -12) offset += 24;
+  return offset;
+}
+
 function* candidateSlots(start: Date, daysAhead: number) {
   // Generate 9:00, 11:00, 14:00, 16:00 slots Paris-time on each weekday.
   const hours = [9, 11, 14, 16];
   for (let day = 1; day <= daysAhead; day++) {
     const d = new Date(start.getTime() + day * 24 * 60 * 60 * 1000);
     if (!isWeekday(d)) continue;
+    const offset = parisUtcOffset(d); // e.g. 2 for CEST, 1 for CET
     for (const h of hours) {
       const slot = new Date(d);
-      slot.setUTCHours(h - 1, 0, 0, 0); // Paris is roughly UTC+1; close enough for demo slot proposals
+      slot.setUTCHours(h - offset, 0, 0, 0);
       yield slot;
     }
   }

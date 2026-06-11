@@ -1,0 +1,82 @@
+[
+  {
+    "id": "BUG-001",
+    "severity": "high",
+    "file": "lib/agent/tools/lead-tools.ts",
+    "line": 97,
+    "title": "record_qualification downgrades 'booked' leads back to 'qualified'",
+    "description": "status: complete ? 'qualified' : lead.status — if lead is already 'booked', 'handoff', or 'abandoned', this overwrites it with 'qualified' whenever all criteria are present. The model re-calls record_qualification on new info, so a booked lead gets silently downgraded.",
+    "fix": "Guard: status: complete && lead.status === 'active' ? 'qualified' : lead.status",
+    "status": "fixed"
+  },
+  {
+    "id": "BUG-002",
+    "severity": "high",
+    "file": "lib/agent/tools/context.ts",
+    "line": 18,
+    "title": "ensureLead race condition with parallel tool calls in same step",
+    "description": "Vercel AI SDK executes all tool calls in a single model step concurrently. If model emits record_qualification + book_viewing simultaneously on anonymous conv (lead_id=null), both read lead_id=null, both call createLead(), both call updateConversation — last write wins, orphaning the other lead.",
+    "fix": "Add DB-level unique constraint on conversations.lead_id, or serialize the create-and-attach with SELECT FOR UPDATE. Or move lazy-create to a pre-turn setup step.",
+    "status": "open"
+  },
+  {
+    "id": "BUG-003",
+    "severity": "medium",
+    "file": "lib/agent/run.ts",
+    "line": 218,
+    "title": "Empty-reply fallback dispatched to admin Telegram for main_assistant turns",
+    "description": "shouldDispatchReply returns true for main_assistant. When turn produces no text, storedContent is set to 'Je suis désolé…' and dispatched to admin's Telegram even if tools ran successfully.",
+    "fix": "Skip dispatch (and storing the fallback) when toolCalls.length > 0 and reply is empty — tool-only turns are valid. Only use fallback for turns that had no tool calls and no text.",
+    "status": "fixed"
+  },
+  {
+    "id": "BUG-004",
+    "severity": "medium",
+    "file": "lib/agent/tools/main-assistant-tools.ts",
+    "line": 517,
+    "title": "bulk_follow_up N+1 DB queries + no per-lead error isolation",
+    "description": "for-of loop calls getConversationByLeadId per lead (N+1 queries). A single dispatchReply failure throws and aborts remaining leads silently.",
+    "fix": "Batch-fetch conversations. Wrap per-lead block in try/catch, record failed leads in result.",
+    "status": "open"
+  },
+  {
+    "id": "BUG-005",
+    "severity": "medium",
+    "file": "lib/agent/tools/main-assistant-tools.ts",
+    "line": 210,
+    "title": "get_lead_viewings full-table scan — listBookedViewings loads all rows",
+    "description": "listBookedViewings() fetches every viewing row then filters in JS. Same pattern in weekly_report and listing_performance. Unbounded as viewings table grows.",
+    "fix": "Add lead_id param to listBookedViewings or create getViewingsByLeadId with SQL WHERE lead_id = $1.",
+    "status": "open"
+  },
+  {
+    "id": "BUG-006",
+    "severity": "medium",
+    "file": "lib/agent/tools/main-assistant-tools.ts",
+    "line": 493,
+    "title": "trigger_lead_turn hardcodes 'fr' language",
+    "description": "runAgentTurn always called with 'fr' regardless of lead's actual conversation language. English leads get French-biased system prompt on admin-triggered turns.",
+    "fix": "Persist lang on conversation row, or read it from the conversation and pass the actual language.",
+    "status": "fixed"
+  },
+  {
+    "id": "BUG-007",
+    "severity": "low",
+    "file": "lib/calendar.ts",
+    "line": 25,
+    "title": "Dead code: jan/jul/stdOffset use server local timezone, never referenced",
+    "description": "stdOffset is computed from server's getTimezoneOffset() (not Paris), and is never referenced. Actual offset correctly comes from Intl.DateTimeFormat path.",
+    "fix": "Delete lines 25-30.",
+    "status": "fixed"
+  },
+  {
+    "id": "BUG-008",
+    "severity": "low",
+    "file": "lib/agent/tools/finish-reply-tool.ts",
+    "line": 1,
+    "title": "Dead file: finish-reply-tool.ts no longer imported anywhere",
+    "description": "finish_reply was removed from all agent tool builders. File remains but is orphaned. Its execute also never used the message param (would have silently discarded replies).",
+    "fix": "Delete the file.",
+    "status": "fixed"
+  }
+]

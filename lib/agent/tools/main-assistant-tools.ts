@@ -489,8 +489,15 @@ export function buildMainAssistantTools(
         message: z.string().min(1).max(1000).describe('Internal instruction for the lead agent — not visible to the lead')
       }),
       execute: async ({ conversation_id, message }) => {
+        // Detect conversation language from recent user messages so the lead agent
+        // uses the correct defaultLang (not always 'fr').
+        const recentMsgs = await getVisibleMessages(conversation_id);
+        const lastUserMsg = [...recentMsgs].reverse().find((m) => m.role === 'user');
+        const detectedLang = lastUserMsg && /[a-zA-Z]/.test(lastUserMsg.content)
+          && !/[àâçéèêëîïôùûüÿœæ]/i.test(lastUserMsg.content)
+          ? 'en' : 'fr';
         // messageRole 'system' keeps the injected instruction out of the lead's visible chat
-        const result = await runAgentTurn(conversation_id, message, { type: 'lead' }, 'fr', 'system');
+        const result = await runAgentTurn(conversation_id, message, { type: 'lead' }, detectedLang, 'system');
         return { ok: true, reply: result.reply };
       }
     }),

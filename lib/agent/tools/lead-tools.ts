@@ -94,7 +94,8 @@ export function buildLeadTools(ctx: AgentContext) {
           qual_values: merged,
           potential_status,
           score_reason: reason,
-          status: complete ? 'qualified' : lead.status
+          // Only promote to 'qualified' from 'active' — never downgrade booked/handoff/abandoned.
+          status: complete && lead.status === 'active' ? 'qualified' : lead.status
         });
         scheduleAppendLeadLongTermFacts(
           lead.id,
