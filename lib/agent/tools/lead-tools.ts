@@ -9,7 +9,7 @@ import {
   createBookedViewing
 } from '@/lib/db';
 import { getAvailableSlots, createCalendarEvent } from '@/lib/calendar';
-import { notifyAdmins } from '@/lib/notify';
+import { notifyAdmins, notifyAdminsInChat } from '@/lib/notify';
 import { formatPrice, formatSlot } from '@/lib/format';
 import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
 import { formatConversationForMemory } from '@/lib/agent/cross-thread-context';
@@ -114,7 +114,10 @@ export function buildLeadTools(ctx: AgentContext) {
     }),
 
     get_available_slots: tool({
-      description: 'List candidate viewing slots for the property.',
+      description:
+        'List candidate viewing slots for the property. ' +
+        'Returns each slot as { iso, label } where iso is the exact UTC timestamp to pass to book_viewing. ' +
+        'ALWAYS use the exact iso string from this response — never construct your own timestamp from the label.',
       inputSchema: z.object({ count: z.number().int().min(1).max(5).optional() }),
       execute: async ({ count }) => {
         const listing = await getListing(listingId);
@@ -132,7 +135,10 @@ export function buildLeadTools(ctx: AgentContext) {
 
     book_viewing: tool({
       description:
-        'Book a viewing at a slot. Requires a contact email — if missing, ask the visitor for it first.',
+        'Book a viewing. slot_iso MUST be the exact iso string returned by get_available_slots — ' +
+        'never construct a timestamp from a label or user-stated time. ' +
+        'Requires a contact email — if missing, ask the visitor for it first. ' +
+        'already_booked:true in the response means the booking is already confirmed — do NOT try another slot.',
       inputSchema: z.object({
         slot_iso: z.string(),
         contact_email: z.string().email().optional(),
@@ -176,9 +182,9 @@ export function buildLeadTools(ctx: AgentContext) {
           name: contact_name ?? lead.name,
           status: 'booked'
         });
-        await notifyAdmins(
-          `[Viewing booked] ${listing.title} — ${formatSlot(slot_iso)} — ${contact_name ?? lead.name ?? email}`
-        );
+        const bookingLabel = `[Viewing booked] ${listing.title} — ${formatSlot(slot_iso)} — ${contact_name ?? lead.name ?? email}`;
+        await notifyAdmins(bookingLabel);
+        await notifyAdminsInChat(`📅 Nouvelle visite confirmée\n\n**Bien :** ${listing.title}\n**Quand :** ${formatSlot(slot_iso)}\n**Contact :** ${contact_name ?? lead.name ?? email}`);
         scheduleAppendLeadLongTermFacts(lead.id, [
           `viewing booked: ${listing.title} (${listing.address}) on ${formatSlot(slot_iso)}`,
           `contact: ${contact_name ?? lead.name ?? '—'} <${email}>`,

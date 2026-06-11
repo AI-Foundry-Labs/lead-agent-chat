@@ -18,7 +18,7 @@ function toModelMessages(
   msgs: { role: string; content: string }[]
 ): ModelMessage[] {
   return msgs
-    .filter((m) => m.role !== 'tool')
+    .filter((m) => m.role !== 'tool' && m.content.trim() !== '')
     .map((m) => ({
       role: (m.role === 'user' || m.role === 'system') ? 'user' : 'assistant',
       content: m.content

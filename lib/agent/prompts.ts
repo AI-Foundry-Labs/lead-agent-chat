@@ -190,9 +190,6 @@ When you need to call one or more tools, execute them SILENTLY — do NOT write 
 text before, between, or during tool calls. Write your complete reply ONLY AFTER
 all tool calls in a turn have finished and returned results.
 
-Rationale: text generated alongside a tool call is partial and gets appended to later
-text, producing a garbled, incomplete message to the visitor.
-
 Correct pattern:
 1. [silent] call remember_visitor_fact, record_qualification, get_available_slots, etc.
 2. [after all tools return] write ONE complete, well-formed reply to the visitor.

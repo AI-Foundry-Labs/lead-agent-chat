@@ -29,6 +29,7 @@ import { buildMainAssistantTools } from '@/lib/agent/tools/main-assistant-tools'
 import { buildMainAssistantSystemPrompt } from '@/lib/agent/prompts/main-assistant-prompt';
 import type { AgentContext } from '@/lib/agent/tools/context';
 import type { Conversation, Language } from '@/lib/types';
+import { agentLog } from '@/lib/logger';
 
 export type Actor =
   | { type: 'lead' }
@@ -57,7 +58,7 @@ function toModelMessages(
   msgs: { role: string; content: string }[]
 ): ModelMessage[] {
   return msgs
-    .filter((m) => m.role !== 'tool')
+    .filter((m) => m.role !== 'tool' && m.content.trim() !== '')
     .map((m) => ({
       // 'system' role = auto-injected prompt (handoff alerts etc.) → treat as user turn for LLM
       role: (m.role === 'user' || m.role === 'system') ? 'user' : 'assistant',
@@ -72,10 +73,19 @@ export async function runAgentTurn(
   lang: Language = 'fr',
   messageRole: 'user' | 'system' = 'user'
 ): Promise<TurnResult> {
+  const turnStart = Date.now();
+  agentLog.info('agent.turn.start', { conversationId, actor: actor.type, messageLen: message.length, lang });
+
   const conversation = await getConversation(conversationId);
-  if (!conversation) throw new Error('conversation_not_found');
+  if (!conversation) {
+    agentLog.error('agent.turn.error', { conversationId, error: 'conversation_not_found' });
+    throw new Error('conversation_not_found');
+  }
   const config = await getAgencyConfig();
-  if (!config) throw new Error('Agency config not initialized — run db:seed');
+  if (!config) {
+    agentLog.error('agent.turn.error', { conversationId, error: 'agency_config_missing' });
+    throw new Error('Agency config not initialized — run db:seed');
+  }
 
   // Persist the inbound message so every client sees it immediately.
   if (message.trim()) {
@@ -89,6 +99,7 @@ export async function runAgentTurn(
 
   // Takeover safety: a lead conversation in manual mode does not auto-reply.
   if (conversation.type === 'lead' && conversation.mode === 'manual') {
+    agentLog.info('agent.manual_mode', { conversationId, messageLen: message.length });
     await notifyAdmins(`[Advisor mode] New message from lead: "${message.slice(0, 160)}"`);
     await notifyAdminsInChat(`📩 Nouveau message client — mode conseiller\n\nLe prospect vous a envoyé :\n« ${message.slice(0, 300)} »\n\nVous pouvez répondre directement depuis l'interface web.`);
     return { conversation, reply: '', status: 'manual' };
@@ -103,6 +114,7 @@ export async function runAgentTurn(
       const lead = conversation.lead_id ? await getLeadById(conversation.lead_id) : null;
       // Only escalate once — skip if lead is already in handoff status.
       if (!lead || lead.status !== 'handoff') {
+        agentLog.info('agent.handoff', { conversationId, rule: matched.description, leadId: conversation.lead_id });
         if (conversation.lead_id)
           await updateLead(conversation.lead_id, { status: 'handoff' });
         await notifyAdmins(`[Handoff] Rule triggered: "${matched.description}" — "${message.slice(0, 120)}"`);
@@ -172,31 +184,59 @@ export async function runAgentTurn(
 
   const toolCalls = result.steps.flatMap((s) => s.toolCalls);
   const toolResults = result.steps.flatMap((s) => s.toolResults);
+  const latencyMs = Date.now() - turnStart;
 
-  if (!result.text.trim()) {
-    console.warn(
-      '[agent] empty reply after', result.steps.length, 'steps —',
-      'finishReason:', result.finishReason,
-      'toolCalls:', toolCalls.length
-    );
+  // Log each tool call for audit trail
+  for (const tc of toolCalls) {
+    agentLog.info('agent.tool.call', { conversationId, tool: tc.toolName });
   }
+
+  const reply: string = result.text;
+
+  if (!reply.trim()) {
+    agentLog.warn('agent.empty_reply', {
+      conversationId,
+      steps: result.steps.length,
+      finishReason: result.finishReason,
+      toolCallCount: toolCalls.length,
+      latencyMs
+    });
+  }
+
+  agentLog.info('agent.turn.end', {
+    conversationId,
+    actor: actor.type,
+    steps: result.steps.length,
+    finishReason: result.finishReason,
+    toolCallCount: toolCalls.length,
+    replyLen: reply.length,
+    latencyMs
+  });
+
+  // Never persist empty assistant messages — they corrupt future context
+  // and cause the model to mirror the empty pattern on the next turn.
+  const storedContent = reply.trim()
+    ? reply
+    : lang === 'en'
+      ? "I'm sorry, I encountered an issue. Could you please repeat your message?"
+      : "Je suis désolé, une erreur est survenue. Pourriez-vous répéter votre message ?";
 
   await addMessage({
     conversation_id: conversationId,
     role: 'assistant',
-    content: result.text,
+    content: storedContent,
     tool_calls: toolCalls.length ? toolCalls : null,
     tool_results: toolResults.length ? toolResults : null
   });
 
   broadcastConversationUpdate(conversationId);
   if (shouldDispatchReply(ctx.conversation)) {
-    await dispatchReply(ctx.conversation, result.text);
+    await dispatchReply(ctx.conversation, storedContent);
   }
 
   if (actor.type === 'lead') {
     scheduleThreadMemorySummarize(conversationId);
   }
 
-  return { conversation: ctx.conversation, reply: result.text, status: 'replied' };
+  return { conversation: ctx.conversation, reply: storedContent, status: 'replied' };
 }
