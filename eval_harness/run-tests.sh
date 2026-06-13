@@ -33,6 +33,19 @@ if [[ "$MODE" == "all" || "$MODE" == "unit" ]]; then
   run_suite "Unit: Conversation Access"       "$HARNESS/unit/conversation-access-logic.test.ts"
 fi
 
+if [[ "$MODE" == "all" || "$MODE" == "agent" ]]; then
+  run_suite "Agent: Lead Prompt"              "$HARNESS/agent/prompt-construction/lead-system-prompt.test.ts"
+  run_suite "Agent: Operator Prompt"          "$HARNESS/agent/prompt-construction/operator-system-prompt.test.ts"
+  run_suite "Agent: Lead Tool Logic"          "$HARNESS/agent/tool-behavior/lead-tool-logic.test.ts"
+  run_suite "Agent: Operator Tool Schemas"    "$HARNESS/agent/tool-behavior/operator-tool-schemas.test.ts"
+  run_suite "Agent: Main Assistant Schemas"   "$HARNESS/agent/tool-behavior/main-assistant-tool-schemas.test.ts"
+  run_suite "Agent: Thread Turns"             "$HARNESS/agent/thread-pipeline/thread-turns.test.ts"
+  run_suite "Agent: Thread Summary Schema"    "$HARNESS/agent/thread-pipeline/thread-summary-schema.test.ts"
+  run_suite "Agent: Cross-Thread Context"     "$HARNESS/agent/memory/cross-thread-context.test.ts"
+  run_suite "Agent: Memory Constants"         "$HARNESS/agent/memory/memory-constants.test.ts"
+  run_suite "Agent: Handoff Rule Matcher"     "$HARNESS/agent/rules/handoff-rule-matcher.test.ts"
+fi
+
 if [[ "$MODE" == "all" || "$MODE" == "smoke" ]]; then
   SERVER="${SERVER_URL:-http://localhost:3000}"
   if ! curl -sf "$SERVER/api/health" >/dev/null 2>&1 && \

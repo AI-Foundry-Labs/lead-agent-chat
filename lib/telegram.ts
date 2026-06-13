@@ -9,7 +9,12 @@ let bot: Bot | null | undefined;
 export function getBot(): Bot | null {
   if (bot !== undefined) return bot;
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  bot = token ? new Bot(token) : null;
+  // TELEGRAM_API_ROOT lets Docker containers proxy outbound calls through the host
+  // when direct access to api.telegram.org is blocked by the Docker NAT layer.
+  const apiRoot = process.env.TELEGRAM_API_ROOT;
+  bot = token
+    ? new Bot(token, apiRoot ? { client: { apiRoot } } : undefined)
+    : null;
   return bot;
 }
 

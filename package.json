@@ -13,6 +13,7 @@
     "db:seed": "tsx --env-file=.env scripts/seed.ts",
     "telegram:dev": "tsx --env-file=.env scripts/telegram-dev.ts",
     "test": "node --require tsx/cjs --test eval_harness/unit/*.test.ts",
+    "test:agent": "node --require tsx/cjs --test eval_harness/agent/prompt-construction/*.test.ts eval_harness/agent/tool-behavior/*.test.ts eval_harness/agent/thread-pipeline/*.test.ts eval_harness/agent/memory/*.test.ts eval_harness/agent/rules/*.test.ts",
     "test:smoke": "node --require tsx/cjs --test eval_harness/smoke/*.test.ts",
     "test:all": "bash eval_harness/run-tests.sh"
   },

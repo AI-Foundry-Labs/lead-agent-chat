@@ -118,7 +118,6 @@ export function OperatorChatPanel({ scope }: { scope: OperatorScope | null }) {
     <ChatShell
       title={title}
       subtitle={t.agent_subtitle}
-      heightClass="min-h-[520px]"
       footer={
         <ChatComposer
           value={input}
