@@ -129,7 +129,7 @@ async function seedRules(agencyId: string) {
 }
 
 async function seedListings(agencyId: string) {
-  if ((await listListings()).length > 0) {
+  if ((await listListings(agencyId)).length > 0) {
     console.log('• listings already present');
     return;
   }

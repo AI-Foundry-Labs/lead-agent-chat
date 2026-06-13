@@ -237,7 +237,7 @@ async function main() {
   if (!adminRow) { console.error('✗ No admin — run: npm run db:seed'); process.exit(1); }
   const config = await getAgencyConfig(adminRow.agency_id);
   if (!config) { console.error('✗ No agency config — run: npm run db:seed'); process.exit(1); }
-  const allListings = await listListings();
+  const allListings = await listListings(adminRow.agency_id);
   const listingId = allListings[0]?.id ?? null;
 
   console.log(`Config: ${config.name} | Admin: ${adminRow.name ?? adminRow.email} | Listing: ${listingId ?? 'none'}\n`);

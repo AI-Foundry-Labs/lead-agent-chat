@@ -317,7 +317,7 @@ export function buildMainAssistantTools(
       description: 'List all property listings.',
       inputSchema: z.object({}),
       execute: async () => {
-        const listings = await listListings();
+        const listings = await listListings(ctx.config.agency_id);
         return listings.map((l) => ({
           id: l.id,
           title: l.title,
@@ -551,7 +551,7 @@ export function buildMainAssistantTools(
         const [allLeads, allViewings, allListings] = await Promise.all([
           listLeads(ctx.config.agency_id),
           listBookedViewings(ctx.config.agency_id),
-          listListings()
+          listListings(ctx.config.agency_id)
         ]);
         return allListings.map((listing) => {
           const listingLeads = allLeads.filter((l) => l.listing_id === listing.id);

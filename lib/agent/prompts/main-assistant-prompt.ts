@@ -10,7 +10,7 @@ export async function buildMainAssistantSystemPrompt(args: {
   const [leads, viewings, listings] = await Promise.all([
     listLeads(config.agency_id),
     listBookedViewings(config.agency_id),
-    listListings()
+    listListings(config.agency_id)
   ]);
 
   const now = new Date();
