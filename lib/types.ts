@@ -22,6 +22,7 @@ export type ViewingStatus = 'proposed' | 'booked' | 'cancelled';
 
 export interface Conversation {
   id: string;
+  agency_id: string;
   type: ConversationType;
   lead_id: string | null;
   admin_id: string | null;
@@ -47,6 +48,7 @@ export interface Message {
 
 export interface Lead {
   id: string;
+  agency_id: string;
   channel: Channel;
   email: string | null;
   name: string | null;
@@ -64,6 +66,7 @@ export interface Lead {
 
 export interface ViewingSlot {
   id: string;
+  agency_id: string;
   conversation_id: string;
   lead_id: string | null;
   listing_id: string;
@@ -78,6 +81,7 @@ export interface ViewingSlot {
 
 export interface AgencyConfig {
   id: string;
+  agency_id: string;
   name: string;
   tone: string;
   qualification_criteria: Criterion[];
@@ -86,6 +90,7 @@ export interface AgencyConfig {
 
 export interface HandoffRule {
   id: string;
+  agency_id: string;
   description: string;
   trigger_keywords: string[];
   active: boolean;
@@ -94,6 +99,7 @@ export interface HandoffRule {
 
 export interface Listing {
   id: string;
+  agency_id: string;
   title: string;
   title_en: string;
   address: string;
@@ -130,6 +136,7 @@ export const listingSchema = z.object({
     .min(1)
     .max(50)
     .regex(/^[a-z0-9-]+$/, 'id must be lowercase letters, digits, and dashes'),
+  agency_id: z.string().uuid(),
   title: z.string().min(1).max(255),
   title_en: z.string().min(1).max(255),
   address: z.string().min(1).max(500),

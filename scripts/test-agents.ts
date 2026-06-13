@@ -180,6 +180,7 @@ interface IntegrationResult {
 async function runIntegrationTest(
   tc: IntegrationCase,
   adminId: string,
+  agencyId: string,
   listingId: string | null
 ): Promise<IntegrationResult> {
   const t0 = Date.now();
@@ -189,6 +190,7 @@ async function runIntegrationTest(
   try {
     const conv = await createConversation({
       type: tc.agentType === 'main_assistant' ? 'main_assistant' : 'lead',
+      agency_id: agencyId,
       admin_id: tc.agentType === 'main_assistant' ? adminId : null,
       listing_id: tc.agentType === 'lead' ? listingId : null,
       primary_channel: 'web'
@@ -198,7 +200,7 @@ async function runIntegrationTest(
     if (tc.agentType === 'lead') {
       const [leadRow] = await db
         .insert(leads)
-        .values({ channel: 'web', email: null, name: null, listing_id: listingId, language: 'en', status: 'active', qual_values: {} })
+        .values({ agency_id: agencyId, channel: 'web', email: null, name: null, listing_id: listingId, language: 'en', status: 'active', qual_values: {} })
         .returning();
       createdLeadIds.push(leadRow.id);
       await db.update(conversations).set({ lead_id: leadRow.id }).where(eq(conversations.id, conv.id));
@@ -231,10 +233,10 @@ async function main() {
   console.log('║        Agent Action Test Suite               ║');
   console.log('╚══════════════════════════════════════════════╝\n');
 
-  const config = await getAgencyConfig();
-  if (!config) { console.error('✗ No agency config — run: npm run db:seed'); process.exit(1); }
   const [adminRow] = await db.select().from(admins).limit(1);
   if (!adminRow) { console.error('✗ No admin — run: npm run db:seed'); process.exit(1); }
+  const config = await getAgencyConfig(adminRow.agency_id);
+  if (!config) { console.error('✗ No agency config — run: npm run db:seed'); process.exit(1); }
   const allListings = await listListings();
   const listingId = allListings[0]?.id ?? null;
 
@@ -269,7 +271,7 @@ async function main() {
     if (i > 0) await new Promise((r) => setTimeout(r, 1200));
     const tc = INTEGRATION_TESTS[i];
     process.stdout.write(`  ${tc.name} ... `);
-    const result = await runIntegrationTest(tc, adminRow.id, listingId);
+    const result = await runIntegrationTest(tc, adminRow.id, adminRow.agency_id, listingId);
     integrationResults.push(result);
 
     if (result.passed) {

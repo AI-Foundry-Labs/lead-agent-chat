@@ -34,9 +34,10 @@ ${lines.join('\n')}`;
 }
 
 export async function buildAnonymousThreadsReportBlock(
+  agencyId: string,
   lang: Language = 'fr'
 ): Promise<string> {
-  const threads = await listAnonymousVisitorThreads();
+  const threads = await listAnonymousVisitorThreads(agencyId);
   if (threads.length === 0) {
     return '[ANONYMOUS VISITOR THREADS]\nNo active anonymous threads.';
   }

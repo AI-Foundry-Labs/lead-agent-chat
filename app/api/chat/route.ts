@@ -15,6 +15,7 @@ import {
 import { runAgentTurn } from '@/lib/agent/run';
 import { getLang } from '@/lib/i18n-server';
 import { formatSlot } from '@/lib/format';
+import { getDefaultAgency } from '@/lib/db/agencies';
 
 export const runtime = 'nodejs';
 
@@ -79,7 +80,15 @@ export async function POST(req: NextRequest) {
     }
   }
   if (!conv) {
+    // Resolve agency from middleware header; fall back to default.
+    const agencyId =
+      req.headers.get('x-agency-id') ??
+      (await getDefaultAgency())?.id;
+    if (!agencyId) {
+      return Response.json({ error: 'agency_not_configured' }, { status: 503 });
+    }
     conv = await createConversation({
+      agency_id: agencyId,
       type: 'lead',
       listing_id: listingId ?? null,
       lead_id: leadId,

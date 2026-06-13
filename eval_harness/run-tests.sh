@@ -27,10 +27,15 @@ run_suite() {
 cd "$ROOT"
 
 if [[ "$MODE" == "all" || "$MODE" == "unit" ]]; then
-  run_suite "Unit: Calendar / Timezone"       "$HARNESS/unit/calendar-timezone.test.ts"
-  run_suite "Unit: Thread Message Filter"     "$HARNESS/unit/thread-message-filter.test.ts"
-  run_suite "Unit: Lead Status Guard"         "$HARNESS/unit/lead-status-guard.test.ts"
-  run_suite "Unit: Conversation Access"       "$HARNESS/unit/conversation-access-logic.test.ts"
+  run_suite "Unit: Calendar / Timezone"             "$HARNESS/unit/calendar-timezone.test.ts"
+  run_suite "Unit: Thread Message Filter"           "$HARNESS/unit/thread-message-filter.test.ts"
+  run_suite "Unit: Lead Status Guard"               "$HARNESS/unit/lead-status-guard.test.ts"
+  run_suite "Unit: Conversation Access"             "$HARNESS/unit/conversation-access-logic.test.ts"
+  run_suite "Unit: Route Group Message Classify"    "$HARNESS/unit/route-group-message-classify.test.ts"
+  run_suite "Unit: Verify Agency Group"             "$HARNESS/unit/verify-agency-group.test.ts"
+  run_suite "Unit: Lead Topics Title Builders"      "$HARNESS/unit/lead-topics-title-builders.test.ts"
+  run_suite "Unit: Group Send Queue Drop Policy"    "$HARNESS/unit/group-send-queue-drop-policy.test.ts"
+  run_suite "Unit: Agency Host Resolution"          "$HARNESS/unit/agency-host-resolution.test.ts"
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "agent" ]]; then

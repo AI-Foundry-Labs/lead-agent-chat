@@ -5,6 +5,7 @@ import type { ViewingSlot, ViewingStatus } from '@/lib/types';
 function rowToViewing(r: typeof viewing_slots.$inferSelect): ViewingSlot {
   return {
     id: r.id,
+    agency_id: r.agency_id,
     conversation_id: r.conversation_id,
     lead_id: r.lead_id,
     listing_id: r.listing_id,
@@ -16,6 +17,15 @@ function rowToViewing(r: typeof viewing_slots.$inferSelect): ViewingSlot {
     summary: r.summary,
     created_at: r.created_at
   };
+}
+
+export async function getViewingById(id: string): Promise<ViewingSlot | null> {
+  const rows = await db
+    .select()
+    .from(viewing_slots)
+    .where(eq(viewing_slots.id, id))
+    .limit(1);
+  return rows[0] ? rowToViewing(rows[0]) : null;
 }
 
 export async function getActiveViewing(
@@ -50,6 +60,7 @@ export async function findBookedSlot(
 }
 
 export async function createBookedViewing(input: {
+  agency_id: string;
   conversation_id: string;
   lead_id?: string | null;
   listing_id: string;
@@ -61,6 +72,7 @@ export async function createBookedViewing(input: {
   const [r] = await db
     .insert(viewing_slots)
     .values({
+      agency_id: input.agency_id,
       conversation_id: input.conversation_id,
       lead_id: input.lead_id ?? null,
       listing_id: input.listing_id,
@@ -74,11 +86,16 @@ export async function createBookedViewing(input: {
   return rowToViewing(r);
 }
 
-export async function listBookedViewings(): Promise<ViewingSlot[]> {
+export async function listBookedViewings(agencyId: string): Promise<ViewingSlot[]> {
   const rows = await db
     .select()
     .from(viewing_slots)
-    .where(eq(viewing_slots.status, 'booked'))
+    .where(
+      and(
+        eq(viewing_slots.agency_id, agencyId),
+        eq(viewing_slots.status, 'booked')
+      )
+    )
     .orderBy(desc(viewing_slots.created_at));
   return rows.map(rowToViewing);
 }

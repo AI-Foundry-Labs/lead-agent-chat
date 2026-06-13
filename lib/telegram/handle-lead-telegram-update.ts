@@ -1,152 +1,280 @@
-import {
-  consumeTelegramLink,
-  consumeLeadTelegramLink
-} from '@/lib/auth';
-import {
-  bindTelegramToAdmin,
-  getAdminByTelegramUserId,
-  getOrCreateMainAssistant,
-  getConversation,
-  getOrCreateLeadTelegramConversation,
-  getMostRecentLeadTelegramConversation,
-  bindTelegramToLead,
-  getLeadByTelegramUserId,
-  updateConversation
-} from '@/lib/db';
-import { ensureLeadForConversation } from '@/lib/telegram/ensure-lead-for-conversation';
-import { sendTelegramMessage } from '@/lib/telegram';
+/**
+ * Main Telegram update dispatcher.
+ *
+ * Branches on chat.type:
+ *   private  → handle-private-telegram-message.ts (admin/lead DM flows)
+ *   group/supergroup → group routing (Phase 04):
+ *       /link <token>          → bind group to agency (Phase 02)
+ *       Topic 2 (assistant)    → operator copilot turn
+ *       Topic 1 (conversation) → takeover stub (Phase 05)
+ *       general / unknown      → ignore
+ *
+ * Echo-loop safety: is_bot filter + idempotency by update_id.
+ */
+
+import { consumeAgencyTelegramLink } from '@/lib/auth';
+import { getAgencyByTelegramGroup, bindTelegramGroupToAgency, getConversation, updateConversation, addMessage } from '@/lib/db';
+import { sendTelegramMessage, getBot } from '@/lib/telegram';
+import { enqueueGroupSend } from '@/lib/telegram/group-send-queue';
+import { verifyAgencyGroup } from '@/lib/telegram/verify-agency-group';
+import { resolveAgencyAdmin } from '@/lib/telegram/resolve-agency-admin';
+import { routeGroupMessage } from '@/lib/telegram/route-group-message';
 import { runAgentTurn } from '@/lib/agent/run';
+import { dispatchReply } from '@/lib/dispatch';
+import { broadcastConversationUpdate } from '@/lib/events';
+import {
+  handleAdminStart,
+  handleLeadStart,
+  handleAdminMessage,
+  handleLeadMessage,
+  sendUnlinkedReply,
+  sendStartNoTokenReply
+} from '@/lib/telegram/handle-private-telegram-message';
 import type { TelegramUpdate } from '@/lib/telegram-router-types';
+import type { LeadTelegramTopics } from '@/lib/db/lead-telegram-topics';
 
-async function handleAdminStart(
-  chatId: string,
+// ─── Idempotency deduplication (red-team I1) ──────────────────────────────
+// Bounded LRU set of seen update_ids. Telegram resends on webhook timeout.
+
+const SEEN_UPDATE_MAX = 2_000;
+const seenUpdateIds = new Set<number>();
+const seenUpdateIdQueue: number[] = [];
+
+function markSeen(updateId: number): boolean {
+  if (seenUpdateIds.has(updateId)) return true;
+  seenUpdateIds.add(updateId);
+  seenUpdateIdQueue.push(updateId);
+  if (seenUpdateIdQueue.length > SEEN_UPDATE_MAX) {
+    seenUpdateIds.delete(seenUpdateIdQueue.shift()!);
+  }
+  return false;
+}
+
+// ─── Cached bot id for verifyAgencyGroup ──────────────────────────────────
+
+let cachedBotId: number | undefined;
+
+async function getBotId(): Promise<number | undefined> {
+  if (cachedBotId !== undefined) return cachedBotId;
+  const bot = getBot();
+  if (!bot) return undefined;
+  try {
+    cachedBotId = (await bot.api.getMe()).id;
+  } catch {
+    // non-fatal — verifyAgencyGroup degrades gracefully
+  }
+  return cachedBotId;
+}
+
+// ─── Group handlers ────────────────────────────────────────────────────────
+
+async function handleAgencyGroupLink(
+  chat: NonNullable<TelegramUpdate['message']>['chat'] & object,
   token: string
-): Promise<boolean> {
-  const adminId = await consumeTelegramLink(token);
-  if (!adminId) return false;
-  await bindTelegramToAdmin(adminId, chatId);
+): Promise<void> {
+  const chatId = String((chat as Record<string, unknown>).id);
+  const agencyId = await consumeAgencyTelegramLink(token);
+  if (!agencyId) {
+    await sendTelegramMessage(
+      chatId,
+      "❌ Token invalide ou expiré. Demandez un nouveau code depuis l'interface web.\n" +
+      '❌ Invalid or expired token. Request a new code from the web interface.'
+    );
+    return;
+  }
+  const result = await verifyAgencyGroup(
+    chat as unknown as Record<string, unknown>,
+    await getBotId()
+  );
+  if (!result.ok) {
+    await sendTelegramMessage(chatId, `❌ ${result.reason}`);
+    return;
+  }
+  await bindTelegramGroupToAgency(agencyId, chatId);
   await sendTelegramMessage(
     chatId,
-    '✅ Compte lié. Vous pouvez me parler ici comme sur la plateforme.'
+    "✅ Groupe lié à l'agence. Le bot est prêt à créer des fils par lead.\n" +
+    '✅ Group linked to the agency. The bot is ready to create per-lead topics.\n\n' +
+    'Prochaines étapes / Next steps:\n' +
+    '• Les nouveaux leads déclencheront automatiquement la création de sujets.\n' +
+    '• New leads will automatically trigger topic creation.'
   );
-  return true;
 }
 
-async function handleLeadStart(
+/**
+ * Topic 2 (🤖 Assistant): operator copilot turn.
+ * Unmapped sender → bilingual rejection (red-team C2 — no silent fallback).
+ * Reply posted into Topic 2 ONLY via kind:'critical' queue entry.
+ */
+async function handleOperatorTopicMessage(
   chatId: string,
-  fromId: string,
-  token: string
-): Promise<boolean> {
-  const payload = await consumeLeadTelegramLink(token);
-  if (!payload) return false;
-
-  const source = await getConversation(payload.conversation_id);
-  if (!source || source.type !== 'lead') {
-    await sendTelegramMessage(chatId, '❌ Lien invalide ou expiré.');
-    return true;
-  }
-
-  const lead = await ensureLeadForConversation(source);
-  await bindTelegramToLead(lead.id, fromId);
-
-  const listingId = payload.listing_id ?? source.listing_id;
-  await getOrCreateLeadTelegramConversation({
-    leadId: lead.id,
-    listingId
-  });
-
-  await sendTelegramMessage(
-    chatId,
-    '✅ Telegram lié. Ceci est un fil séparé du site — vos préférences et qualifications sont partagées, mais l’historique de chat ici repart à zéro.\n\n✅ Telegram linked. This is a separate thread from the website — your preferences are shared, but chat history here starts fresh.\n\nPosez votre question sur le bien / Ask your question about the property.'
-  );
-  return true;
-}
-
-async function handleAdminMessage(
-  chatId: string,
+  mapping: LeadTelegramTopics,
   fromId: string,
   text: string
-): Promise<boolean> {
-  const admin = await getAdminByTelegramUserId(fromId);
-  if (!admin) return false;
-
-  const conv = await getOrCreateMainAssistant(admin.id);
-  await runAgentTurn(conv.id, text, {
-    type: 'main_assistant',
-    adminId: admin.id,
-    adminName: admin.name
-  });
-  return true;
+): Promise<void> {
+  if (!mapping.operator_conversation_id) {
+    console.warn('[group] Topic 2: no operator_conversation_id for lead', mapping.lead_id);
+    return;
+  }
+  const admin = await resolveAgencyAdmin(fromId, mapping.agency_id);
+  if (!admin) {
+    void enqueueGroupSend(
+      chatId,
+      '❌ Identifiez-vous d\'abord en liant votre compte Telegram depuis l\'interface web.\n' +
+      '❌ Link your Telegram first from the web interface before using the assistant topic.',
+      { threadId: mapping.assistant_topic_id, kind: 'critical' }
+    );
+    return;
+  }
+  const result = await runAgentTurn(
+    mapping.operator_conversation_id,
+    text,
+    { type: 'operator', leadId: mapping.lead_id, adminId: admin.id, adminName: admin.name }
+  );
+  if (result.reply.trim()) {
+    // Post into Topic 2 only — dispatchReply skips 'operator' type so the
+    // customer channel is never touched.
+    void enqueueGroupSend(chatId, result.reply, {
+      threadId: mapping.assistant_topic_id,
+      kind: 'critical'
+    });
+  }
 }
 
-async function handleLeadMessage(
+/**
+ * Topic 1 (💬 Conversation): takeover relay.
+ *
+ * Security: only resolveAgencyAdmin-mapped admins may take over or resume.
+ * Unmapped sender → bilingual rejection hint, no fallback.
+ *
+ * /resume command: set conv.mode='agent' and post bilingual resume notice.
+ * Any other text: relay to customer's real channel; flip mode to 'manual' first
+ * if not already (idempotent). Do NOT echo back into Topic 1 (admin already
+ * sees their own message there).
+ */
+async function handleAgencyTakeoverMessage(
+  chatId: string,
+  mapping: LeadTelegramTopics,
   fromId: string,
   text: string
-): Promise<boolean> {
-  const lead = await getLeadByTelegramUserId(fromId);
-  if (!lead) return false;
-
-  const conv =
-    (await getMostRecentLeadTelegramConversation(lead.id)) ??
-    (await getOrCreateLeadTelegramConversation({
-      leadId: lead.id,
-      listingId: lead.listing_id
-    }));
-
-  if (!conv.lead_id) {
-    await updateConversation(conv.id, { lead_id: lead.id });
+): Promise<void> {
+  // Authorization: must be a mapped agency admin.
+  const admin = await resolveAgencyAdmin(fromId, mapping.agency_id);
+  if (!admin) {
+    void enqueueGroupSend(
+      chatId,
+      '❌ Compte non lié. Liez votre Telegram depuis l\'interface web pour prendre en charge ce lead.\n' +
+      '❌ Account not linked. Link your Telegram from the web interface to handle this lead.',
+      { threadId: mapping.conversation_topic_id, kind: 'critical' }
+    );
+    return;
   }
 
-  await runAgentTurn(conv.id, text, { type: 'lead' });
-  return true;
+  if (!mapping.lead_conversation_id) {
+    console.warn('[group] Topic 1: no lead_conversation_id for lead', mapping.lead_id);
+    return;
+  }
+
+  const conv = await getConversation(mapping.lead_conversation_id);
+  if (!conv) {
+    console.warn('[group] Topic 1: conversation not found', mapping.lead_conversation_id);
+    return;
+  }
+
+  const adminName = admin.name ?? admin.email;
+
+  // /resume: return control to the agent.
+  if (text.trim().startsWith('/resume')) {
+    if (conv.mode !== 'agent') {
+      await updateConversation(conv.id, { mode: 'agent' });
+    }
+    void enqueueGroupSend(
+      chatId,
+      `🤖 Agent réactivé par ${adminName}. Le bot reprend les réponses automatiques.\n` +
+      `🤖 Agent resumed by ${adminName}. The bot is now handling replies again.`,
+      { threadId: mapping.conversation_topic_id, kind: 'critical' }
+    );
+    broadcastConversationUpdate(conv.id);
+    return;
+  }
+
+  // Takeover: flip mode to 'manual' if not already, post takeover notice.
+  if (conv.mode !== 'manual') {
+    await updateConversation(conv.id, { mode: 'manual' });
+    void enqueueGroupSend(
+      chatId,
+      `🧑‍💼 Prise en charge par ${adminName}. Le bot est mis en pause.\n` +
+      `🧑‍💼 Taken over by ${adminName}. The bot is now paused.`,
+      { threadId: mapping.conversation_topic_id, kind: 'critical' }
+    );
+  }
+
+  // Persist admin message and relay to customer's real channel.
+  await addMessage({ conversation_id: conv.id, role: 'admin', content: text });
+  await dispatchReply(conv, text);
+  broadcastConversationUpdate(conv.id);
 }
+
+// ─── Main dispatcher ───────────────────────────────────────────────────────
 
 export async function handleTelegramUpdate(
   update: TelegramUpdate
-): Promise<'admin' | 'lead' | 'unlinked' | 'ignored'> {
+): Promise<'admin' | 'lead' | 'group' | 'unlinked' | 'ignored'> {
   const msg = update?.message;
   const text = msg?.text;
   const fromId = msg?.from?.id != null ? String(msg.from.id) : null;
   const chatId = msg?.chat?.id != null ? String(msg.chat.id) : null;
   if (!text || !fromId || !chatId) return 'ignored';
 
-  if (text.startsWith('/start')) {
-    const token = text.split(/\s+/)[1];
-    if (!token) {
-      const isAdmin = await getAdminByTelegramUserId(fromId);
-      const isLead = await getLeadByTelegramUserId(fromId);
-      if (isAdmin) {
-        await sendTelegramMessage(chatId, 'Bonjour ! Envoyez votre message admin.');
-        return 'admin';
-      }
-      if (isLead) {
-        await sendTelegramMessage(
-          chatId,
-          'Bonjour ! Continuez à me parler ici, ou ouvrez un nouveau lien depuis le site pour un autre bien.'
-        );
-        return 'lead';
-      }
-      await sendTelegramMessage(
-        chatId,
-        'Pour lier votre compte, ouvrez le lien Telegram depuis le chat sur le site, ou envoyez /start <code> depuis ce lien.\n\nTo link, open the Telegram link from the website chat, or send /start <code> from that link.'
-      );
-      return 'unlinked';
+  const chatType = msg?.chat?.type ?? 'private';
+  const isGroup = chatType === 'group' || chatType === 'supergroup';
+
+  // ── GROUP branch ──────────────────────────────────────────────────────────
+  if (isGroup) {
+    if (text.startsWith('/link ')) {
+      const token = text.split(/\s+/)[1];
+      if (token) { await handleAgencyGroupLink(msg.chat!, token); return 'group'; }
     }
 
+    const agency = await getAgencyByTelegramGroup(chatId);
+    if (!agency) return 'ignored';
+
+    // Echo filter: ignore the bot's own mirror posts to prevent re-ingestion.
+    if (msg.from?.is_bot === true) return 'ignored';
+
+    // Idempotency: drop Telegram webhook retries.
+    const updateId = update.update_id;
+    if (updateId !== undefined && markSeen(updateId)) {
+      console.warn('[group] duplicate update_id', updateId, '— skipping');
+      return 'ignored';
+    }
+
+    const route = await routeGroupMessage(chatId, msg.message_thread_id);
+
+    if (route.kind === 'topic2_assistant' && route.mapping) {
+      await handleOperatorTopicMessage(chatId, route.mapping, fromId, text);
+      return 'group';
+    }
+    if (route.kind === 'topic1_conversation' && route.mapping) {
+      await handleAgencyTakeoverMessage(chatId, route.mapping, fromId, text);
+      return 'group';
+    }
+    return 'ignored'; // general / unknown thread
+  }
+
+  // ── PRIVATE branch ────────────────────────────────────────────────────────
+  if (text.startsWith('/start')) {
+    const token = text.split(/\s+/)[1];
+    if (!token) return sendStartNoTokenReply(chatId, fromId);
     if (await handleAdminStart(chatId, token)) return 'admin';
     if (await handleLeadStart(chatId, fromId, token)) return 'lead';
-
     await sendTelegramMessage(chatId, '❌ Lien invalide ou expiré.');
     return 'unlinked';
   }
 
   if (await handleAdminMessage(chatId, fromId, text)) return 'admin';
-
   if (await handleLeadMessage(fromId, text)) return 'lead';
 
-  await sendTelegramMessage(
-    chatId,
-    'Compte non lié. Ouvrez le lien « Continuer sur Telegram » depuis le site, ou demandez le code à l’assistant.\n\nNot linked yet — use the “Continue on Telegram” link from the website chat.'
-  );
+  await sendUnlinkedReply(chatId);
   return 'unlinked';
 }

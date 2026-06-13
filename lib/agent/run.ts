@@ -12,8 +12,9 @@ import {
   listActiveHandoffRules
 } from '@/lib/db';
 import { broadcastConversationUpdate } from '@/lib/events';
-import { dispatchReply } from '@/lib/dispatch';
-import { notifyAdmins, notifyAdminsInChat } from '@/lib/notify';
+import { dispatchReply, mirrorLeadTurnToTopic } from '@/lib/dispatch';
+import { notifyAdminsInChat } from '@/lib/notify';
+import { notifyAgency } from '@/lib/telegram/notify-agency';
 import { matchRule } from '@/lib/agent/rules';
 import { reportHandoffBriefing } from '@/lib/agent/report-handoff-briefing';
 import { buildLeadSystemPrompt } from '@/lib/agent/prompts';
@@ -81,7 +82,7 @@ export async function runAgentTurn(
     agentLog.error('agent.turn.error', { conversationId, error: 'conversation_not_found' });
     throw new Error('conversation_not_found');
   }
-  const config = await getAgencyConfig();
+  const config = await getAgencyConfig(conversation.agency_id);
   if (!config) {
     agentLog.error('agent.turn.error', { conversationId, error: 'agency_config_missing' });
     throw new Error('Agency config not initialized — run db:seed');
@@ -95,20 +96,34 @@ export async function runAgentTurn(
       content: message
     });
     broadcastConversationUpdate(conversationId);
+
+    // Mirror lead user messages into Topic 1 (non-blocking; failure must not break turn).
+    if (actor.type === 'lead') {
+      await mirrorLeadTurnToTopic(conversation, 'lead', message).catch((e) =>
+        agentLog.warn('agent.mirror.lead.error', { conversationId, error: String(e) })
+      );
+    }
   }
 
   // Takeover safety: a lead conversation in manual mode does not auto-reply.
   if (conversation.type === 'lead' && conversation.mode === 'manual') {
     agentLog.info('agent.manual_mode', { conversationId, messageLen: message.length });
-    await notifyAdmins(`[Advisor mode] New message from lead: "${message.slice(0, 160)}"`);
-    await notifyAdminsInChat(`📩 Nouveau message client — mode conseiller\n\nLe prospect vous a envoyé :\n« ${message.slice(0, 300)} »\n\nVous pouvez répondre directement depuis l'interface web.`);
+    const manualSummary =
+      `📩 Nouveau message client — mode conseiller / New lead message (advisor mode)\n\n` +
+      `« ${message.slice(0, 300)} »\n\n` +
+      `Répondez depuis l'interface web ou Topic 1.\n` +
+      `Reply from the web UI or Topic 1.`;
+    if (conversation.lead_id) {
+      void notifyAgency(conversation.agency_id, conversation.lead_id, manualSummary);
+    }
+    await notifyAdminsInChat(manualSummary);
     return { conversation, reply: '', status: 'manual' };
   }
 
   // Deterministic handoff rules: notify admins but let the agent keep responding.
   // The agent goes silent only when admin explicitly clicks "Take over".
   if (conversation.type === 'lead' && message.trim()) {
-    const rules = await listActiveHandoffRules();
+    const rules = await listActiveHandoffRules(conversation.agency_id);
     const matched = await matchRule(message, rules);
     if (matched) {
       const lead = conversation.lead_id ? await getLeadById(conversation.lead_id) : null;
@@ -117,7 +132,14 @@ export async function runAgentTurn(
         agentLog.info('agent.handoff', { conversationId, rule: matched.description, leadId: conversation.lead_id });
         if (conversation.lead_id)
           await updateLead(conversation.lead_id, { status: 'handoff' });
-        await notifyAdmins(`[Handoff] Rule triggered: "${matched.description}" — "${message.slice(0, 120)}"`);
+        const handoffSummary =
+          `🚨 Transfert / Handoff\n\nRègle déclenchée / Rule triggered: "${matched.description}"\n\n` +
+          `Message: « ${message.slice(0, 160)} »\n\n` +
+          `Le prospect attend une réponse humaine.\n` +
+          `The lead is waiting for a human reply.`;
+        if (conversation.lead_id) {
+          void notifyAgency(conversation.agency_id, conversation.lead_id, handoffSummary);
+        }
         // Lead reports up: generate a briefing from this lead's own context and post it
         // into the admin's main_assistant panel (fire-and-forget — no separate operator agent).
         const triggerMsg = message;
@@ -241,6 +263,10 @@ export async function runAgentTurn(
   }
 
   if (actor.type === 'lead') {
+    // Mirror FINAL agent reply into Topic 1 (non-blocking; failure must not break turn).
+    await mirrorLeadTurnToTopic(ctx.conversation, 'agent', storedContent).catch((e) =>
+      agentLog.warn('agent.mirror.agent.error', { conversationId, error: String(e) })
+    );
     scheduleThreadMemorySummarize(conversationId);
   }
 

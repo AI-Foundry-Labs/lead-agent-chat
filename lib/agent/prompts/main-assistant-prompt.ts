@@ -8,8 +8,8 @@ export async function buildMainAssistantSystemPrompt(args: {
   const { config, adminName } = args;
 
   const [leads, viewings, listings] = await Promise.all([
-    listLeads(),
-    listBookedViewings(),
+    listLeads(config.agency_id),
+    listBookedViewings(config.agency_id),
     listListings()
   ]);
 

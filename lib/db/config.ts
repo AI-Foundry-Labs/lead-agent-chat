@@ -5,6 +5,7 @@ import type { AgencyConfig, Criterion } from '@/lib/types';
 function rowToConfig(r: typeof agency_config.$inferSelect): AgencyConfig {
   return {
     id: r.id,
+    agency_id: r.agency_id,
     name: r.name,
     tone: r.tone,
     qualification_criteria: r.qualification_criteria,
@@ -12,16 +13,22 @@ function rowToConfig(r: typeof agency_config.$inferSelect): AgencyConfig {
   };
 }
 
-export async function getAgencyConfig(): Promise<AgencyConfig | null> {
-  const rows = await db.select().from(agency_config).limit(1);
+/** Get config for a specific agency. Returns null if not initialized. */
+export async function getAgencyConfig(agencyId: string): Promise<AgencyConfig | null> {
+  const rows = await db
+    .select()
+    .from(agency_config)
+    .where(eq(agency_config.agency_id, agencyId))
+    .limit(1);
   return rows[0] ? rowToConfig(rows[0]) : null;
 }
 
 export async function upsertAgencyConfig(
   input: Omit<AgencyConfig, 'id'> & { id?: string }
 ): Promise<AgencyConfig> {
-  const existing = await getAgencyConfig();
+  const existing = await getAgencyConfig(input.agency_id);
   const values = {
+    agency_id: input.agency_id,
     name: input.name,
     tone: input.tone,
     qualification_criteria: input.qualification_criteria,
@@ -40,9 +47,10 @@ export async function upsertAgencyConfig(
 }
 
 export async function updateCriteria(
+  agencyId: string,
   criteria: Criterion[]
 ): Promise<AgencyConfig> {
-  const existing = await getAgencyConfig();
+  const existing = await getAgencyConfig(agencyId);
   if (!existing) throw new Error('Agency config not initialized — run db:seed');
   const [r] = await db
     .update(agency_config)

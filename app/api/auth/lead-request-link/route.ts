@@ -3,6 +3,7 @@ import { promises as dns } from 'node:dns';
 import { getLeadByEmail, createLead } from '@/lib/db';
 import { createMagicLink, destroyLeadSession } from '@/lib/auth';
 import { sendEmail, buildMagicLinkEmail } from '@/lib/email';
+import { getDefaultAgency } from '@/lib/db/agencies';
 
 export const runtime = 'nodejs';
 
@@ -49,7 +50,16 @@ export async function POST(request: Request) {
   }
 
   let lead = await getLeadByEmail(email);
-  if (!lead) lead = await createLead({ channel: 'web', email });
+  if (!lead) {
+    // Resolve agency from Host header (set by middleware); fall back to default.
+    const agencyId =
+      request.headers.get('x-agency-id') ??
+      (await getDefaultAgency())?.id;
+    if (!agencyId) {
+      return Response.json({ error: 'agency_not_configured' }, { status: 503 });
+    }
+    lead = await createLead({ agency_id: agencyId, channel: 'web', email });
+  }
 
   const url = await createMagicLink(lead.id, email);
   const { subject, text, html } = buildMagicLinkEmail({ name: lead.name, url, lang });

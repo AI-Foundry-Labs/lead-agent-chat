@@ -6,6 +6,7 @@ import {
   createConversation,
   updateConversation
 } from '@/lib/db';
+import { getDefaultAgency } from '@/lib/db/agencies';
 import { runAgentTurn } from '@/lib/agent/run';
 
 export const runtime = 'nodejs';
@@ -23,9 +24,14 @@ export async function POST(req: Request) {
   const parsed = parseInbound(form);
   if (!parsed) return new Response('no sender', { status: 200 });
 
+  // Email inbound has no Host header → use default agency.
+  const agency = await getDefaultAgency();
+  if (!agency) return new Response('agency_not_configured', { status: 503 });
+
   let lead = await getLeadByEmail(parsed.email);
   if (!lead) {
     lead = await createLead({
+      agency_id: agency.id,
       channel: 'email',
       email: parsed.email,
       name: parsed.name,
@@ -36,6 +42,7 @@ export async function POST(req: Request) {
   let conv = await getConversationByLeadId(lead.id);
   if (!conv) {
     conv = await createConversation({
+      agency_id: lead.agency_id,
       type: 'lead',
       lead_id: lead.id,
       listing_id: parsed.listing_id ?? lead.listing_id,

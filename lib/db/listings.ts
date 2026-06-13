@@ -5,6 +5,7 @@ import type { Listing } from '@/lib/types';
 function rowToListing(r: typeof listings.$inferSelect): Listing {
   return {
     id: r.id,
+    agency_id: r.agency_id,
     title: r.title,
     title_en: r.title_en,
     address: r.address,

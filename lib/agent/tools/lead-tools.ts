@@ -170,6 +170,7 @@ export function buildLeadTools(ctx: AgentContext) {
           details: `Potential: ${lead.potential_status ?? '—'}\n${details}`
         });
         await createBookedViewing({
+          agency_id: ctx.config.agency_id,
           conversation_id: ctx.conversation.id,
           lead_id: lead.id,
           listing_id: listing.id,

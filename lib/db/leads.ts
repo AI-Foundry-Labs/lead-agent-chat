@@ -12,6 +12,7 @@ import { isIdentifiedLead } from '@/lib/leads/is-identified-lead';
 function rowToLead(r: typeof leads.$inferSelect): Lead {
   return {
     id: r.id,
+    agency_id: r.agency_id,
     channel: r.channel as Channel,
     email: r.email,
     name: r.name,
@@ -42,26 +43,38 @@ export async function getLeadByEmail(email: string): Promise<Lead | null> {
   return rows[0] ? rowToLead(rows[0]) : null;
 }
 
-export async function listLeads(): Promise<Lead[]> {
-  const rows = await db.select().from(leads).orderBy(desc(leads.updated_at));
-  return rows.map(rowToLead);
-}
-
-export async function listLeadsByStatus(status: LeadStatus): Promise<Lead[]> {
+export async function listLeads(agencyId: string): Promise<Lead[]> {
   const rows = await db
     .select()
     .from(leads)
-    .where(eq(leads.status, status))
+    .where(eq(leads.agency_id, agencyId))
     .orderBy(desc(leads.updated_at));
   return rows.map(rowToLead);
 }
 
-export async function listIdentifiedLeads(): Promise<Lead[]> {
-  const rows = await db.select().from(leads).orderBy(desc(leads.updated_at));
+export async function listLeadsByStatus(
+  agencyId: string,
+  status: LeadStatus
+): Promise<Lead[]> {
+  const rows = await db
+    .select()
+    .from(leads)
+    .where(eq(leads.agency_id, agencyId))
+    .orderBy(desc(leads.updated_at));
+  return rows.map(rowToLead).filter((l) => l.status === status);
+}
+
+export async function listIdentifiedLeads(agencyId: string): Promise<Lead[]> {
+  const rows = await db
+    .select()
+    .from(leads)
+    .where(eq(leads.agency_id, agencyId))
+    .orderBy(desc(leads.updated_at));
   return rows.map(rowToLead).filter(isIdentifiedLead);
 }
 
 export async function createLead(input: {
+  agency_id: string;
   channel?: Channel;
   email?: string | null;
   name?: string | null;
@@ -72,6 +85,7 @@ export async function createLead(input: {
   const [r] = await db
     .insert(leads)
     .values({
+      agency_id: input.agency_id,
       channel: input.channel ?? 'web',
       email: input.email ?? null,
       name: input.name ?? null,

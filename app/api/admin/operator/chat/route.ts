@@ -14,17 +14,20 @@ export const runtime = 'nodejs';
 /** Load operator chat history for a lead agent or the anonymous pool agent. */
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
+    const agencyId = admin.agency_id;
     const scope = req.nextUrl.searchParams.get('scope');
     const leadId = req.nextUrl.searchParams.get('lead_id');
 
     let conv;
     if (scope === 'anonymous') {
-      conv = await getOrCreateAnonymousOperator();
+      conv = await getOrCreateAnonymousOperator(agencyId);
     } else if (leadId) {
       const lead = await getLeadById(leadId);
-      if (!lead) return Response.json({ error: 'not_found' }, { status: 404 });
-      conv = await getOrCreateLeadOperator(leadId);
+      if (!lead || lead.agency_id !== agencyId) {
+        return Response.json({ error: 'not_found' }, { status: 404 });
+      }
+      conv = await getOrCreateLeadOperator(leadId, agencyId);
     } else {
       return Response.json({ error: 'lead_id_or_scope_required' }, { status: 400 });
     }
@@ -61,7 +64,7 @@ export async function POST(req: Request) {
     }
 
     if (parsed.data.scope === 'anonymous') {
-      const conv = await getOrCreateAnonymousOperator();
+      const conv = await getOrCreateAnonymousOperator(admin.agency_id);
       const result = await runAgentTurn(conv.id, parsed.data.message, {
         type: 'operator',
         leadId: null,
@@ -85,9 +88,11 @@ export async function POST(req: Request) {
       return Response.json({ error: 'lead_id_required' }, { status: 400 });
     }
     const lead = await getLeadById(parsed.data.lead_id);
-    if (!lead) return Response.json({ error: 'not_found' }, { status: 404 });
+    if (!lead || lead.agency_id !== admin.agency_id) {
+      return Response.json({ error: 'not_found' }, { status: 404 });
+    }
 
-    const conv = await getOrCreateLeadOperator(parsed.data.lead_id);
+    const conv = await getOrCreateLeadOperator(parsed.data.lead_id, admin.agency_id);
     const result = await runAgentTurn(conv.id, parsed.data.message, {
       type: 'operator',
       leadId: parsed.data.lead_id,

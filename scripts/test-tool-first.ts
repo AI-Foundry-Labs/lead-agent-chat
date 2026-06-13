@@ -18,18 +18,19 @@ function toolsOf(tc: unknown): string[] {
 }
 
 async function main() {
-  const config = await getAgencyConfig();
   const [admin] = await db.select().from(admins).limit(1);
-  if (!config || !admin) { console.error('run db:seed'); process.exit(1); }
+  if (!admin) { console.error('run db:seed'); process.exit(1); }
+  const config = await getAgencyConfig(admin.agency_id);
+  if (!config) { console.error('run db:seed'); process.exit(1); }
 
   // Seed a lead whose name partially matches "truong"
   const [lead] = await db.insert(leads).values({
-    channel: 'web', email: 'thanhtruongtran@gmail.com', name: 'Tran Thanh Truong',
+    agency_id: admin.agency_id, channel: 'web', email: 'thanhtruongtran@gmail.com', name: 'Tran Thanh Truong',
     listing_id: null, language: 'en', status: 'active', qual_values: {}
   }).returning();
   leadIds.push(lead.id);
 
-  const conv = await createConversation({ type: 'main_assistant', admin_id: admin.id, primary_channel: 'web' });
+  const conv = await createConversation({ type: 'main_assistant', agency_id: admin.agency_id, admin_id: admin.id, primary_channel: 'web' });
   convIds.push(conv.id);
 
   const r = await runAgentTurn(

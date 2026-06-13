@@ -66,12 +66,14 @@ app/api/chat        web inbound (POST) + SSE stream; /api/email, /api/telegram, 
    calendar event is created (mock in dev) and a confirmation card appears in chat.
 2. **Handoff** — mention price negotiation, or open the Vincennes house. A configured
    handoff rule fires: the conversation switches to `manual`, admins are notified
-   (Telegram if linked), and the lead-facing agent stops auto-replying.
+   (Telegram agency group if linked), and the lead-facing agent stops auto-replying.
 3. **Live config** — log in at `/admin`, tell the assistant "ajoute un critère quartier
    préféré". `update_criteria` rewrites the agency criteria; the next lead turn uses it.
-4. **Telegram sync** — in `/admin` click *Lier Telegram*, send `/start <token>` to the
-   bot. The same assistant context is now reachable from Telegram, and lead
-   notifications/takeover land there too.
+4. **Telegram agency group** — in `/admin` click *Lier Telegram*, send `/link <token>` to
+   the bot in your agency's supergroup (forum). Two auto-created topics per lead:
+   **💬 Conversation** (live lead↔agent mirror + admin takeover) and **🤖 Assistant**
+   (internal copilot). Admins reply in the group to take over; `/resume` returns control
+   to the agent. Note: existing visitor lead-DM flow still works in parallel.
 
 ## Guardrails
 

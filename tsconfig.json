@@ -37,6 +37,7 @@
   ],
   "exclude": [
     "node_modules",
-    "actions-runner"
+    "actions-runner",
+    "eval_harness"
   ]
 }

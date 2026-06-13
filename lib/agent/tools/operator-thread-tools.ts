@@ -44,7 +44,7 @@ export function buildOperatorThreadTools(ctx: AgentContext, scopedLeadId: string
       execute: async ({ limit }) => {
         const threads = scopedLeadId
           ? await listConversationsByLeadId(scopedLeadId)
-          : await listAnonymousVisitorThreads();
+          : await listAnonymousVisitorThreads(ctx.config.agency_id);
         return threads.slice(0, limit ?? 25).map((t) => ({
           conversation_id: t.id,
           lead_id: t.lead_id,

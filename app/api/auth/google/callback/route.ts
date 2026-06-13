@@ -3,6 +3,7 @@ import { db, admins, getLeadByEmail, createLead, updateLead } from '@/lib/db';
 import { createAdminSession, setLeadCookie } from '@/lib/auth';
 import { fetchGoogleProfile, safeRedirectPath } from '@/lib/google-oauth';
 import { consumeOAuthState } from '@/lib/oauth-state';
+import { getDefaultAgency } from '@/lib/db/agencies';
 
 export const runtime = 'nodejs';
 
@@ -59,7 +60,15 @@ export async function GET(request: Request) {
 
     let lead = await getLeadByEmail(profile.email);
     if (!lead) {
+      // Resolve agency from Host header (set by middleware); fall back to default.
+      const agencyId =
+        request.headers.get('x-agency-id') ??
+        (await getDefaultAgency())?.id;
+      if (!agencyId) {
+        return Response.redirect(`${base}${fallback}?login=google_error`, 302);
+      }
       lead = await createLead({
+        agency_id: agencyId,
         channel: 'web',
         email: profile.email,
         name: profile.name

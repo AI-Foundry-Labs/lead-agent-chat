@@ -14,6 +14,8 @@ import {
   consumeTelegramLinkToken,
   createLeadTelegramLinkToken,
   consumeLeadTelegramLinkToken,
+  createAgencyTelegramLinkToken,
+  consumeAgencyTelegramLinkToken,
   type LeadTelegramLinkPayload
 } from '@/lib/db';
 
@@ -45,7 +47,7 @@ function sha256(s: string): string {
   return crypto.createHash('sha256').update(s).digest('hex');
 }
 
-export type AdminInfo = { id: string; email: string; name: string | null };
+export type AdminInfo = { id: string; email: string; name: string | null; agency_id: string };
 
 export async function createAdminSession(
   adminId: string,
@@ -75,7 +77,7 @@ export async function getAdminFromCookies(): Promise<AdminInfo | null> {
   const token = jar.get(ADMIN_COOKIE)?.value;
   if (!token) return null;
   const rows = await db
-    .select({ id: admins.id, email: admins.email, name: admins.name })
+    .select({ id: admins.id, email: admins.email, name: admins.name, agency_id: admins.agency_id })
     .from(admin_sessions)
     .innerJoin(admins, eq(admins.id, admin_sessions.admin_id))
     .where(
@@ -217,6 +219,26 @@ export async function consumeLeadTelegramLink(
   token: string
 ): Promise<LeadTelegramLinkPayload | null> {
   return consumeLeadTelegramLinkToken(sha256(token));
+}
+
+// ─── Agency Telegram group linking (admin sends /link <token> inside group) ─
+
+const AGENCY_TELEGRAM_LINK_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+/** Issue a single-use agency-scoped token for group binding. */
+export async function issueAgencyTelegramLinkToken(agencyId: string): Promise<string> {
+  const token = newToken();
+  await createAgencyTelegramLinkToken({
+    token_hash: sha256(token),
+    agency_id: agencyId,
+    expires_at: new Date(Date.now() + AGENCY_TELEGRAM_LINK_TTL_MS)
+  });
+  return token;
+}
+
+/** Consume the group link token; returns agency_id or null if invalid/expired. */
+export async function consumeAgencyTelegramLink(token: string): Promise<string | null> {
+  return consumeAgencyTelegramLinkToken(sha256(token));
 }
 
 export class AuthError extends Error {

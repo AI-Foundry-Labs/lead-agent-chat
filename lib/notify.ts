@@ -17,16 +17,18 @@ export async function notifyAdmins(summary: string): Promise<void> {
 
 // Inject a proactive message into every admin's assistant chat panel.
 export async function notifyAdminsInChat(message: string): Promise<void> {
-  let adminRows: { id: string }[] = [];
+  let adminRows: { id: string; agency_id: string }[] = [];
   try {
-    adminRows = await db.select({ id: admins.id }).from(admins);
+    adminRows = await db
+      .select({ id: admins.id, agency_id: admins.agency_id })
+      .from(admins);
   } catch (e) {
     console.error('[notify] failed to fetch admins:', e);
     return;
   }
   await Promise.allSettled(
-    adminRows.map(async ({ id }) => {
-      const conv = await getOrCreateMainAssistant(id);
+    adminRows.map(async ({ id, agency_id }) => {
+      const conv = await getOrCreateMainAssistant(id, agency_id);
       await addMessage({ conversation_id: conv.id, role: 'assistant', content: message });
       broadcastConversationUpdate(conv.id);
     })
