@@ -18,8 +18,10 @@
     "test:all": "bash eval_harness/run-tests.sh"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.84",
     "@ai-sdk/gateway": "^2.0.0",
     "@ai-sdk/google": "^3.0.80",
+    "@ai-sdk/openai": "^3.0.71",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-separator": "^1.1.7",
