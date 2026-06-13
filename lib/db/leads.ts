@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { db, leads } from './client';
 import type {
   Channel,
@@ -34,11 +34,14 @@ export async function getLeadById(id: string): Promise<Lead | null> {
   return rows[0] ? rowToLead(rows[0]) : null;
 }
 
-export async function getLeadByEmail(email: string): Promise<Lead | null> {
+export async function getLeadByEmail(
+  email: string,
+  agencyId: string
+): Promise<Lead | null> {
   const rows = await db
     .select()
     .from(leads)
-    .where(eq(leads.email, email))
+    .where(and(eq(leads.email, email), eq(leads.agency_id, agencyId)))
     .limit(1);
   return rows[0] ? rowToLead(rows[0]) : null;
 }

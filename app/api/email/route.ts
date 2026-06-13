@@ -6,7 +6,8 @@ import {
   createConversation,
   updateConversation
 } from '@/lib/db';
-import { getDefaultAgency } from '@/lib/db/agencies';
+import { getAgencyByHost, getDefaultAgency } from '@/lib/db/agencies';
+import { getOrCreateLeadTopics } from '@/lib/telegram/lead-topics';
 import { runAgentTurn } from '@/lib/agent/run';
 
 export const runtime = 'nodejs';
@@ -24,11 +25,20 @@ export async function POST(req: Request) {
   const parsed = parseInbound(form);
   if (!parsed) return new Response('no sender', { status: 200 });
 
-  // Email inbound has no Host header → use default agency.
-  const agency = await getDefaultAgency();
+  // Best-effort agency resolution from the inbound recipient address (the `to`
+  // field from Sendgrid), matched against agencies.primary_host by domain.
+  // Falls back to getDefaultAgency() when no match is found.
+  // TODO: multi-agency inbound email routing — wire per-agency inbound addresses.
+  let agency = null;
+  const toField = (form.get('to') as string | null) ?? '';
+  const toDomainMatch = toField.match(/@([\w.-]+)/);
+  if (toDomainMatch) {
+    agency = await getAgencyByHost(toDomainMatch[1]);
+  }
+  if (!agency) agency = await getDefaultAgency();
   if (!agency) return new Response('agency_not_configured', { status: 503 });
 
-  let lead = await getLeadByEmail(parsed.email);
+  let lead = await getLeadByEmail(parsed.email, agency.id);
   if (!lead) {
     lead = await createLead({
       agency_id: agency.id,
@@ -37,6 +47,10 @@ export async function POST(req: Request) {
       name: parsed.name,
       listing_id: parsed.listing_id
     });
+    const newLeadId = lead.id;
+    void getOrCreateLeadTopics(agency.id, newLeadId).catch((err) =>
+      console.error('[email] getOrCreateLeadTopics failed', newLeadId, err)
+    );
   }
 
   let conv = await getConversationByLeadId(lead.id);

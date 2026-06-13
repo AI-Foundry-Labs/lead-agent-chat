@@ -86,12 +86,15 @@ export async function listConversationsByLeadId(
 /** Attach anonymous listing chats to a logged-in lead after sign-in. */
 export async function claimConversationsForLead(
   leadId: string,
-  conversationIds: string[]
+  conversationIds: string[],
+  agencyId: string
 ): Promise<string[]> {
   const claimed: string[] = [];
   for (const id of conversationIds) {
     const conv = await getConversation(id);
+    // Skip if wrong agency, already claimed, or not a lead thread.
     if (!conv || conv.type !== 'lead' || conv.lead_id) continue;
+    if (conv.agency_id !== agencyId) continue;
     await updateConversation(id, { lead_id: leadId });
     claimed.push(id);
   }

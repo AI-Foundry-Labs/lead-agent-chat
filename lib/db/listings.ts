@@ -25,10 +25,12 @@ function rowToListing(r: typeof listings.$inferSelect): Listing {
   };
 }
 
-export async function listListings(): Promise<Listing[]> {
+// Agency-scoped: a tenant only ever sees its own listings (public + admin).
+export async function listListings(agencyId: string): Promise<Listing[]> {
   const rows = await db
     .select()
     .from(listings)
+    .where(eq(listings.agency_id, agencyId))
     .orderBy(desc(listings.created_at));
   return rows.map(rowToListing);
 }

@@ -18,7 +18,7 @@ export async function GET() {
 
     const [leads, listings, config, rules, booked, anonThreads] = await Promise.all([
       listIdentifiedLeads(agencyId),
-      listListings(),
+      listListings(agencyId),
       getAgencyConfig(agencyId),
       listHandoffRules(agencyId),
       listBookedViewings(agencyId),

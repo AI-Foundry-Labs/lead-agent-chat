@@ -5,6 +5,7 @@ import {
   assertLeadChatAccess,
   toConversationAccessResponse
 } from '@/lib/conversation-access';
+import { getDefaultAgency } from '@/lib/db/agencies';
 import { buildLeadTelegramLinkInfo } from '@/lib/telegram/build-lead-telegram-link';
 import { telegramConfigured } from '@/lib/telegram';
 
@@ -26,9 +27,15 @@ export async function POST(req: NextRequest) {
   }
 
   const leadId = await getLeadIdFromCookies();
+  const agencyId =
+    req.headers.get('x-agency-id') ??
+    (await getDefaultAgency())?.id;
+  if (!agencyId) {
+    return Response.json({ error: 'agency_not_configured' }, { status: 503 });
+  }
   let conv;
   try {
-    conv = await assertLeadChatAccess(parsed.data.conversationId, leadId);
+    conv = await assertLeadChatAccess(parsed.data.conversationId, leadId, agencyId);
   } catch (e) {
     return toConversationAccessResponse(e) ?? Response.json({ error: 'error' }, { status: 500 });
   }

@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { getListingById } from '@/lib/db';
+import { getRequestAgencyId } from '@/lib/agency-server';
 import { ChatPanel } from '@/components/chat/chat-panel';
 import {
   ListingFeaturesList,
@@ -23,7 +24,9 @@ export default async function ListingPage({
   const lang = await getLang();
   const t = getDict(lang);
   const listing = await getListingById(id);
-  if (!listing) notFound();
+  // Tenant isolation: a listing is only viewable on its own agency's host.
+  const agencyId = await getRequestAgencyId();
+  if (!listing || listing.agency_id !== agencyId) notFound();
 
   const en = lang === 'en';
   const title = en ? listing.title_en : listing.title;
