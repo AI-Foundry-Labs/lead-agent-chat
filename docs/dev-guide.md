@@ -109,21 +109,33 @@ Webhook bảo mật bằng `TELEGRAM_WEBHOOK_SECRET` (Telegram echo header `x-te
 2. Web `/admin` → "Lier Telegram" → `/link <mã>` → dán vào group.
 3. Bind thành công set `agencies.telegram_group_chat_id` + `telegram_topics_enabled = true`.
 
-### 6.5. Mô hình 2-topic / lead
+### 6.5. Topics trong group
 
-| Topic | Hành vi |
-|-------|---------|
-| **💬 Conversation** | Read-only mirror lead↔agent. Icon: 🧑 Lead / 🤖 Agent / 🧑‍💼 Conseiller. Gõ vào → bot nhắc dùng 🤖 (không takeover). |
-| **🤖 Assistant** | Operator copilot scoped lead. Ra lệnh → agent có thể `send_reply` gửi tin tới khách; tin đó **mirror vào 💬** (icon 🤖 Agent). |
+| Topic | Phạm vi | Hành vi |
+|-------|---------|---------|
+| **🛠 Master** | per-agency (1) | Config qua chat → `main_assistant` agent. Tạo khi `/link` (lưu `agencies.telegram_master_topic_id`). Dispatcher exact-match thread id **trước** routing per-lead. |
+| **💬 Conversation** | per-lead | Read-only mirror lead↔agent. Icon: 🧑 Lead / 🤖 Agent / 🧑‍💼 Conseiller. Gõ vào → bot nhắc dùng 🤖 (không takeover). |
+| **🤖 Assistant** | per-lead | Operator copilot scoped lead. Ra lệnh → agent `send_reply` gửi tin tới khách; tin đó **mirror vào 💬** (icon 🤖 Agent). |
 
-- Topic tạo **lazy + idempotent** (unique `(group_chat_id, lead_id)`), off response path, khi lead xuất hiện.
+- Topic per-lead tạo **lazy + idempotent** (unique `(group_chat_id, lead_id)`), off response path, khi lead xuất hiện (mọi path tạo lead: chat web, telegram, magic link, google, email).
 - Inbound group routing theo `message_thread_id`; dedupe `update_id`; lọc `is_bot` chống echo.
 - Outbound qua **per-group send queue** (~20 msg/phút/group): tin `mirror` droppable, `critical` (handoff/operator-reply) không bao giờ drop.
 
-### 6.6. Handoff + rep khách
+### 6.6. Master topic — config qua chat
+- Nhắn vào topic 🛠 Master → `handleMasterTopicMessage` → `runAgentTurn(main_assistant)` với `resolveActingAdmin` (sender hoặc primary admin).
+- Tools `main_assistant`: `update_criteria`, `update_config`, `create_listing`, `update_listing`, `delete_listing` (tenant-guarded), `bulk_import_listings` (cap 50, ok/fail per item), handoff rules CRUD.
+- Mỗi mutation → `broadcastAgencyDataChanged(agency_id)` → web admin tự refetch (xem 6.8).
+
+### 6.7. Handoff + rep khách
 - Handoff rule fire → `conversation.mode='manual'` (single source of truth) → AI ngừng → `notifyAgency` post vào Topic 💬 + General.
 - Rep khách: (A) ra lệnh trong Topic 🤖 → `send_reply`; hoặc (B) web tab Conversations. Cả hai mirror vào 💬.
 - Release: web tab Conversations → mode='agent'.
+
+### 6.8. Web auto-refresh realtime
+- `lib/events.ts`: agency channel + `broadcastAgencyDataChanged(agencyId)`.
+- SSE endpoint `app/api/admin/stream-agency` (auth, scope theo `admin.agency_id`).
+- `components/admin/admin-shell.tsx` mở EventSource → nhận `agency-data` → refetch `/api/admin/data` (debounce 500ms).
+- Chat SSE cũ (`app/api/admin/stream`, keyed conversationId) không đổi.
 
 ---
 
@@ -170,10 +182,14 @@ npm run test:all       # unit + agent, auto-skip smoke
 | `lib/telegram/lead-topics.ts` | `getOrCreateLeadTopics` (lazy, idempotent) |
 | `lib/telegram/route-group-message.ts` | Phân loại topic theo thread id |
 | `lib/telegram/group-send-queue.ts` | Throttle 20/phút/group + drop policy |
-| `lib/telegram/handle-lead-telegram-update.ts` | Dispatcher group/private |
+| `lib/telegram/handle-lead-telegram-update.ts` | Dispatcher group/private (master topic check + /link) |
+| `lib/telegram/handle-group-telegram-message.ts` | Group handlers: operator / conversation / **master** topic |
 | `lib/telegram/resolve-agency-admin.ts` | `resolveActingAdmin` (sender → admin, fallback primary) |
 | `lib/dispatch.ts` | `mirrorLeadTurnToTopic` (icon prefix) |
 | `lib/agent/tools/operator-thread-tools.ts` | `send_reply` (rep khách + mirror 💬) |
+| `lib/agent/tools/main-assistant-tools.ts` | Master agent tools: config/listing/rules + `delete_listing` + `bulk_import_listings` (emit `broadcastAgencyDataChanged`) |
+| `lib/events.ts` | Pub/sub: conversation + **agency** channel |
+| `app/api/admin/stream-agency/route.ts` | SSE agency-data → web auto-refresh |
 | `scripts/migrate.ts` · `set-webhook.ts` · `onboard-agency.ts` | Ops scripts |
 
 ---

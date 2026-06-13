@@ -41,7 +41,7 @@ Bấm **"Ajouter un bien"** → điền tiêu đề, địa chỉ, giá, diện 
 - **Critères de qualification:** thông tin AI cần thu thập (ngân sách, tài chính, thời gian…).
 - **Règles de handoff:** từ khóa/tình huống khiến AI **dừng tự trả lời và báo bạn** (vd "thương lượng giá").
 
-> Mẹo: vào tab **Assistant** gõ tự nhiên "ajoute un critère quartier préféré" → trợ lý tự cập nhật.
+> Mẹo: không cần thao tác form — gõ tự nhiên cho trợ lý (tab **Assistant** trên web, hoặc topic **🛠 Master** trên Telegram), vd "ajoute un critère quartier préféré". Xem §5.6. Thay đổi áp dụng ngay, web tự cập nhật.
 
 ---
 
@@ -71,7 +71,9 @@ Theo dõi & xử lý khách ngay trên điện thoại.
 ### 5.2. Liên kết nhóm với agency (làm 1 lần)
 1. Web `/admin` → bấm **"Lier Telegram"** → nhận dòng `/link <mã>`.
 2. **Dán `/link <mã>` vào nhóm Telegram.**
-3. Bot xác nhận "✅ đã liên kết".
+3. Bot xác nhận "✅ đã liên kết" và tự tạo topic **🛠 Master** (xem §5.6).
+
+> Nếu nhóm đã liên kết từ trước (chưa có topic 🛠 Master) → `/link` lại bằng mã mới để bot tạo topic Master.
 
 ### 5.3. Mỗi khách → 2 chủ đề (topic) riêng trong nhóm
 
@@ -97,12 +99,33 @@ Vào Topic 🤖 của khách, **ra lệnh** cho AI, ví dụ:
 ### 5.5. Trả quyền cho AI
 Sau khi xử lý xong, vào tab **Conversations** trên web → nút trả về chế độ agent (release). AI tiếp tục tự động.
 
+### 5.6. Topic 🛠 Master — cấu hình agency bằng chat
+
+Trong nhóm có thêm **1 topic 🛠 Master** (chung cho cả agency, không gắn với khách nào). Nhắn vào đây để **cấu hình toàn bộ agency bằng ngôn ngữ tự nhiên** — thay đổi áp dụng ngay vào DB và **web admin tự cập nhật** (không cần reload).
+
+Ví dụ nhắn trong topic 🛠 Master:
+
+| Bạn nhắn | Hệ thống làm |
+|----------|--------------|
+| "Thêm tiêu chí khu vực ưa thích" | Cập nhật tiêu chí qualify |
+| "Đổi tone sang thân thiện hơn" | Đổi giọng điệu agency |
+| "Tạo rule: khi khách hỏi trả góp thì báo tư vấn viên" | Thêm quy tắc handoff |
+| "Tắt rule thương lượng giá" | Bật/tắt rule |
+| "Sửa giá căn Marais thành 950000" | Cập nhật listing |
+| "Xóa listing vincennes-maison" | Xóa listing (chỉ của agency mình) |
+| Dán danh sách nhiều BĐS (tiêu đề, giá, diện tích…) | **Import hàng loạt** — tạo nhiều listing 1 lần, báo cáo cái nào lỗi |
+
+> Topic 🛠 Master = "bảng điều khiển bằng chat". Tất cả cũng làm được trên web (tab Assistant / Configuration / Biens) — chọn nơi tiện nhất.
+
+**Import nhiều BĐS:** paste danh sách trong topic 🛠 Master (mỗi BĐS gồm tiêu đề, địa chỉ, giá, diện tích, số phòng, mô tả). Agent tạo tất cả 1 lần (tối đa 50/lần) và báo cáo cái nào thiếu thông tin.
+
 ---
 
 ## 6. Quy tắc vàng
 
 - **AI tự chạy mặc định** — chỉ can thiệp khi handoff.
 - **Topic 💬 = chỉ xem.** Muốn rep khách → ra lệnh trong **Topic 🤖** hoặc dùng **web**.
+- **Topic 🛠 Master = cấu hình agency.** Đổi tiêu chí / rule / listing bằng chat; web tự cập nhật.
 - **Một nguồn sự thật:** web và Telegram đồng bộ, không lệch.
 - **Dữ liệu cô lập theo agency** — bạn chỉ thấy khách/bất động sản của agency mình.
 
@@ -116,7 +139,10 @@ Sau khi xử lý xong, vào tab **Conversations** trên web → nút trả về 
 | `/link` báo lỗi | Nhóm chưa bật **Topics**, hoặc bot chưa đủ quyền — sửa rồi `/link` lại |
 | Không tạo topic cho khách | Nhóm chưa liên kết, hoặc bot mất quyền |
 | Gõ trong 💬 không gửi cho khách | Đúng thiết kế — 💬 chỉ xem. Dùng Topic 🤖 hoặc web để rep |
-| Khách không thấy bất động sản | Chưa thêm ở tab **Biens** cho đúng agency |
+| Không thấy topic 🛠 Master | Nhóm liên kết trước khi có tính năng — `/link` lại bằng mã mới |
+| Đổi config trong 🛠 Master nhưng web chưa đổi | Đợi 1-2s (tự refresh); nếu vẫn chưa, reload trang |
+| Import BĐS bị thiếu vài cái | Agent báo cái nào lỗi (thường thiếu giá/diện tích) — bổ sung rồi gửi lại |
+| Khách không thấy bất động sản | Chưa thêm ở tab **Biens** / chưa import cho đúng agency |
 
 ---
 
