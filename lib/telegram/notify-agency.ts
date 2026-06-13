@@ -1,12 +1,15 @@
 /**
- * Agency-scoped Telegram notification.
+ * Agency-scoped Telegram notification for a lead handoff/alert.
  *
- * Posts a handoff/alert message into:
- *   1. Topic 1 (💬 Conversation) of the lead's forum topics — lead-specific context.
- *   2. General topic (no message_thread_id) — agency-wide feed.
+ * Posts into the lead's 🤖 Assistant topic — the place the admin acts on the
+ * lead (instruct the agent to reply, e.g. "reply: we can reduce 5%"). This puts
+ * the call-to-action where the admin can actually respond, instead of the
+ * un-actionable General feed.
  *
- * Both sends are tagged kind:'critical' so they are never dropped under queue pressure.
- * Falls back to console log when no group or topic mapping is found — never throws.
+ * Fallback order: 🤖 Assistant topic → 💬 Conversation topic → General feed
+ * (only when the lead has no per-lead topics at all, e.g. older leads).
+ *
+ * kind:'critical' so it is never dropped under queue pressure. Never throws.
  */
 
 import { getAgencyById } from '@/lib/db/agencies';
@@ -26,20 +29,22 @@ export async function notifyAgency(
     }
 
     const groupChatId = agency.telegram_group_chat_id;
-
-    // Resolve Topic 1 for this lead (may be null for older leads).
     const topics = await getLeadTopicsByLead(agencyId, leadId);
 
-    // Post into Topic 1 (lead-specific thread) if mapping exists.
-    if (topics?.conversation_topic_id) {
-      void enqueueGroupSend(groupChatId, summary, {
-        threadId: topics.conversation_topic_id,
-        kind: 'critical'
-      });
-    }
+    // Prefer the 🤖 Assistant topic (admin instructs the agent there).
+    const threadId =
+      topics?.assistant_topic_id ?? topics?.conversation_topic_id ?? undefined;
 
-    // Post into General (agency-wide feed, no thread_id).
-    void enqueueGroupSend(groupChatId, summary, { kind: 'critical' });
+    // Hint where to act when we have a lead topic.
+    const text = threadId
+      ? `${summary}\n\n💬 Répondez ici : « reply: … » pour que l'agent réponde au client.\n` +
+        `💬 Reply here: "reply: …" and the agent will message the customer.`
+      : summary;
+
+    void enqueueGroupSend(groupChatId, text, {
+      ...(threadId ? { threadId } : {}),
+      kind: 'critical'
+    });
   } catch (e) {
     console.error('[notify-agency] failed — non-fatal:', e);
   }
