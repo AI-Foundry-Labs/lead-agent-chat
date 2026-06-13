@@ -17,6 +17,7 @@ import {
   getListing,
   createListing,
   updateListing,
+  deleteListing,
   listBookedViewings,
   getOrCreateLeadOperator,
   listConversationsByLeadId,
@@ -32,7 +33,7 @@ import {
 import { sendTelegramMessage } from '@/lib/telegram';
 import { getAvailableSlots } from '@/lib/calendar';
 import { dispatchReply } from '@/lib/dispatch';
-import { broadcastConversationUpdate } from '@/lib/events';
+import { broadcastConversationUpdate, broadcastAgencyDataChanged } from '@/lib/events';
 import { notifyAdmins } from '@/lib/notify';
 import { criterionSchema, listingSchema } from '@/lib/types';
 import { formatPrice, formatSlot } from '@/lib/format';
@@ -341,6 +342,7 @@ export function buildMainAssistantTools(
           agency_id: ctx.config.agency_id,
           image_url: input.image_url ?? null
         });
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, id: listing.id, title: listing.title };
       }
     }),
@@ -352,7 +354,55 @@ export function buildMainAssistantTools(
         const existing = await getListing(id);
         if (!existing) return { error: 'listing_not_found' };
         const updated = await updateListing(id, fields);
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, id: updated.id, title: updated.title };
+      }
+    }),
+
+    delete_listing: tool({
+      description: 'Permanently delete a property listing by ID.',
+      inputSchema: z.object({ id: z.string() }),
+      execute: async ({ id }) => {
+        const existing = await getListing(id);
+        if (!existing) return { error: 'listing_not_found' };
+        // Tenant guard: only allow deleting listings owned by this agency
+        if (existing.agency_id !== ctx.config.agency_id) return { error: 'forbidden' };
+        await deleteListing(id);
+        broadcastAgencyDataChanged(ctx.config.agency_id);
+        return { ok: true, id };
+      }
+    }),
+
+    bulk_import_listings: tool({
+      description:
+        'Import multiple property listings at once. The agent should parse the admin\'s pasted list/CSV-like text into structured listing objects and pass them here.',
+      inputSchema: z.object({
+        listings: z.array(listingSchema.omit({ agency_id: true })).min(1).max(50)
+      }),
+      execute: async ({ listings: items }) => {
+        const created: { id: string; title: string }[] = [];
+        const failed: { index: number; id?: string; reason: string }[] = [];
+
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          try {
+            const listing = await createListing({
+              ...item,
+              agency_id: ctx.config.agency_id,
+              image_url: item.image_url ?? null
+            });
+            created.push({ id: listing.id, title: listing.title });
+          } catch (err) {
+            failed.push({
+              index: i,
+              id: item.id,
+              reason: err instanceof Error ? err.message : String(err)
+            });
+          }
+        }
+
+        if (created.length > 0) broadcastAgencyDataChanged(ctx.config.agency_id);
+        return { ok: true, created, failed, total: items.length };
       }
     }),
 
@@ -601,6 +651,7 @@ export function buildMainAssistantTools(
       }),
       execute: async ({ description, trigger_keywords }) => {
         const rule = await createHandoffRule({ agency_id: ctx.config.agency_id, description, trigger_keywords });
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, id: rule.id, description: rule.description, active: rule.active };
       }
     }),
@@ -613,6 +664,7 @@ export function buildMainAssistantTools(
       }),
       execute: async ({ rule_id, active }) => {
         const rule = await toggleHandoffRule(rule_id, active);
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, id: rule.id, description: rule.description, active: rule.active };
       }
     }),
@@ -622,6 +674,7 @@ export function buildMainAssistantTools(
       inputSchema: z.object({ rule_id: z.string() }),
       execute: async ({ rule_id }) => {
         await deleteHandoffRule(rule_id);
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, deleted: rule_id };
       }
     }),
@@ -663,6 +716,7 @@ export function buildMainAssistantTools(
       inputSchema: z.object({ criteria: z.array(criterionSchema).min(1) }),
       execute: async ({ criteria }) => {
         ctx.config = await updateCriteria(ctx.config.agency_id, criteria);
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, criteria: ctx.config.qualification_criteria };
       }
     }),
@@ -679,6 +733,7 @@ export function buildMainAssistantTools(
           name: name ?? ctx.config.name,
           tone: tone ?? ctx.config.tone
         });
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, name: ctx.config.name };
       }
     }),

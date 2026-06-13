@@ -8,6 +8,8 @@ export type Agency = {
   primary_host: string | null;
   telegram_group_chat_id: string | null;
   telegram_topics_enabled: boolean;
+  /** message_thread_id of the 🛠 Master topic; null until created. */
+  telegram_master_topic_id: number | null;
   created_at: Date;
 };
 
@@ -19,6 +21,7 @@ function rowToAgency(r: typeof agencies.$inferSelect): Agency {
     primary_host: r.primary_host ?? null,
     telegram_group_chat_id: r.telegram_group_chat_id ?? null,
     telegram_topics_enabled: r.telegram_topics_enabled,
+    telegram_master_topic_id: r.telegram_master_topic_id ?? null,
     created_at: r.created_at
   };
 }

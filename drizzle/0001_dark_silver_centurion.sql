@@ -1,0 +1,1 @@
+ALTER TABLE "agencies" ADD COLUMN "telegram_master_topic_id" integer;

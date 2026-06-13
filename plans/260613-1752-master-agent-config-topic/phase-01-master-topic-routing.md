@@ -2,7 +2,7 @@
 
 ## Overview
 - **Priority:** Critical
-- **Status:** pending
+- **Status:** completed
 - **Description:** Thêm 1 topic "🛠 Master" / agency trong group; nhắn vào đó → chạy `main_assistant` agent (đã có) để config/quản lý; reply post lại topic Master.
 
 ## Key Insights

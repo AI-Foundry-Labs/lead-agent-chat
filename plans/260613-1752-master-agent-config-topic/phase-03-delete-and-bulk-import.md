@@ -2,7 +2,7 @@
 
 ## Overview
 - **Priority:** Medium
-- **Status:** pending
+- **Status:** completed
 - **Description:** Thêm tool `delete_listing` và `bulk_import_listings` cho master agent — admin paste danh sách BĐS trong chat → tạo nhiều listing 1 lần.
 
 ## Key Insights

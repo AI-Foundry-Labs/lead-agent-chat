@@ -2,7 +2,7 @@
 title: Master Agent Config Topic (Telegram) + Web Auto-Refresh + Bulk Import
 slug: master-agent-config-topic
 created: 2026-06-13
-status: in_progress
+status: completed
 mode: fast
 blockedBy: []
 blocks: []

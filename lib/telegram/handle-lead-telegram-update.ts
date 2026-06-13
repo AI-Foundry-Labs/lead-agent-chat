@@ -3,8 +3,9 @@
  *
  * Branches on chat.type:
  *   private  → handle-private-telegram-message.ts (admin/lead DM flows)
- *   group/supergroup → group routing (Phase 04):
- *       /link <token>          → bind group to agency (Phase 02)
+ *   group/supergroup → group routing:
+ *       /link <token>          → bind group to agency + create 🛠 Master topic
+ *       Master topic           → main_assistant config agent (Phase 01)
  *       Topic 2 (assistant)    → operator copilot turn (can send_reply to lead)
  *       Topic 1 (conversation) → read-only mirror; typing → pointer to 🤖
  *       general / unknown      → ignore
@@ -13,13 +14,16 @@
  */
 
 import { consumeAgencyTelegramLink } from '@/lib/auth';
-import { getAgencyByTelegramGroup, bindTelegramGroupToAgency } from '@/lib/db';
-import { sendTelegramMessage, getBot } from '@/lib/telegram';
+import { getAgencyByTelegramGroup, bindTelegramGroupToAgency, setAgencyMasterTopic } from '@/lib/db';
+import { sendTelegramMessage, getBot, createForumTopic } from '@/lib/telegram';
 import { enqueueGroupSend } from '@/lib/telegram/group-send-queue';
 import { verifyAgencyGroup } from '@/lib/telegram/verify-agency-group';
-import { resolveActingAdmin } from '@/lib/telegram/resolve-agency-admin';
 import { routeGroupMessage } from '@/lib/telegram/route-group-message';
-import { runAgentTurn } from '@/lib/agent/run';
+import {
+  handleOperatorTopicMessage,
+  handleConversationTopicMessage,
+  handleMasterTopicMessage
+} from '@/lib/telegram/handle-group-telegram-message';
 import {
   handleAdminStart,
   handleLeadStart,
@@ -29,7 +33,6 @@ import {
   sendStartNoTokenReply
 } from '@/lib/telegram/handle-private-telegram-message';
 import type { TelegramUpdate } from '@/lib/telegram-router-types';
-import type { LeadTelegramTopics } from '@/lib/db/lead-telegram-topics';
 
 // ─── Idempotency deduplication (red-team I1) ──────────────────────────────
 // Bounded LRU set of seen update_ids. Telegram resends on webhook timeout.
@@ -64,7 +67,7 @@ async function getBotId(): Promise<number | undefined> {
   return cachedBotId;
 }
 
-// ─── Group handlers ────────────────────────────────────────────────────────
+// ─── Group: /link handler ─────────────────────────────────────────────────
 
 async function handleAgencyGroupLink(
   chat: NonNullable<TelegramUpdate['message']>['chat'] & object,
@@ -89,6 +92,27 @@ async function handleAgencyGroupLink(
     return;
   }
   await bindTelegramGroupToAgency(agencyId, chatId);
+
+  // Create the 🛠 Master topic if it doesn't exist yet (idempotent).
+  // We need the agency row to check whether it's already been set.
+  const agency = await getAgencyByTelegramGroup(chatId);
+  if (agency && agency.telegram_master_topic_id === null) {
+    const threadId = await createForumTopic(chatId, `🛠 Master — ${agency.name}`);
+    if (threadId !== null) {
+      await setAgencyMasterTopic(agencyId, threadId);
+      void enqueueGroupSend(
+        chatId,
+        "🛠 Topic Master prêt — envoyez un message ici pour configurer l'agence " +
+        '(critères, annonces, règles).\n' +
+        '🛠 Master topic ready — message here to configure the agency ' +
+        '(criteria, listings, rules).',
+        { threadId, kind: 'critical' }
+      );
+    } else {
+      console.warn('[group] createForumTopic failed for agency', agencyId, '— master topic not created');
+    }
+  }
+
   await sendTelegramMessage(
     chatId,
     "✅ Groupe lié à l'agence. Le bot est prêt à créer des fils par lead.\n" +
@@ -96,70 +120,6 @@ async function handleAgencyGroupLink(
     'Prochaines étapes / Next steps:\n' +
     '• Les nouveaux leads déclencheront automatiquement la création de sujets.\n' +
     '• New leads will automatically trigger topic creation.'
-  );
-}
-
-/**
- * Topic 2 (🤖 Assistant): operator copilot turn.
- * Unmapped sender → bilingual rejection (red-team C2 — no silent fallback).
- * Reply posted into Topic 2 ONLY via kind:'critical' queue entry.
- */
-async function handleOperatorTopicMessage(
-  chatId: string,
-  mapping: LeadTelegramTopics,
-  fromId: string,
-  text: string
-): Promise<void> {
-  if (!mapping.operator_conversation_id) {
-    console.warn('[group] Topic 2: no operator_conversation_id for lead', mapping.lead_id);
-    return;
-  }
-  // Group is agency-private → any member is trusted; attribute to the sender's
-  // linked admin or fall back to the agency's primary admin.
-  const admin = await resolveActingAdmin(fromId, mapping.agency_id);
-  if (!admin) {
-    void enqueueGroupSend(
-      chatId,
-      '❌ Aucun administrateur trouvé pour cette agence.\n' +
-      '❌ No admin found for this agency.',
-      { threadId: mapping.assistant_topic_id, kind: 'critical' }
-    );
-    return;
-  }
-  const result = await runAgentTurn(
-    mapping.operator_conversation_id,
-    text,
-    { type: 'operator', leadId: mapping.lead_id, adminId: admin.id, adminName: admin.name }
-  );
-  if (result.reply.trim()) {
-    // Post into Topic 2 only — dispatchReply skips 'operator' type so the
-    // customer channel is never touched.
-    void enqueueGroupSend(chatId, result.reply, {
-      threadId: mapping.assistant_topic_id,
-      kind: 'critical'
-    });
-  }
-}
-
-/**
- * Topic 1 (💬 Conversation): READ-ONLY mirror of the lead↔agent conversation.
- *
- * This topic only shows the conversation (🧑 Lead / 🤖 Agent / 🧑‍💼 Conseiller).
- * Admins do NOT reply here — to message the customer they either give the agent
- * an instruction in the 🤖 Assistant topic (which calls send_reply) or use the
- * web /admin interface. A message typed here just gets a pointer back to 🤖.
- */
-async function handleConversationTopicMessage(
-  chatId: string,
-  mapping: LeadTelegramTopics
-): Promise<void> {
-  void enqueueGroupSend(
-    chatId,
-    'ℹ️ Ce fil affiche seulement la conversation. Pour répondre au client, ' +
-    'donnez la consigne à l’assistant dans le sujet 🤖 Assistant, ou utilisez l’interface web.\n' +
-    'ℹ️ This thread only shows the conversation. To reply to the customer, instruct the ' +
-    'assistant in the 🤖 Assistant topic, or use the web interface.',
-    { threadId: mapping.conversation_topic_id, kind: 'critical' }
   );
 }
 
@@ -195,6 +155,15 @@ export async function handleTelegramUpdate(
     if (updateId !== undefined && markSeen(updateId)) {
       console.warn('[group] duplicate update_id', updateId, '— skipping');
       return 'ignored';
+    }
+
+    // 🛠 Master topic: check BEFORE per-lead routing (master id not in lead_telegram_topics).
+    if (
+      agency.telegram_master_topic_id !== null &&
+      msg.message_thread_id === agency.telegram_master_topic_id
+    ) {
+      await handleMasterTopicMessage(chatId, agency, fromId, text, msg.message_thread_id);
+      return 'group';
     }
 
     const route = await routeGroupMessage(chatId, msg.message_thread_id);

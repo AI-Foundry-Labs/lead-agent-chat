@@ -2,7 +2,7 @@
 
 ## Overview
 - **Priority:** High
-- **Status:** pending
+- **Status:** completed
 - **Description:** Khi agent (qua topic Master / DM / tab Assistant) đổi config / listing / handoff rule, web admin tự cập nhật ngay, không cần reload.
 
 ## Key Insights

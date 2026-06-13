@@ -50,3 +50,17 @@ export async function bindTelegramGroupToAgency(
     .set({ telegram_group_chat_id: groupChatId, telegram_topics_enabled: true })
     .where(eq(agencies.id, agencyId));
 }
+
+/**
+ * Persist the 🛠 Master topic thread id for an agency.
+ * Called once after createForumTopic succeeds during /link.
+ */
+export async function setAgencyMasterTopic(
+  agencyId: string,
+  threadId: number
+): Promise<void> {
+  await db
+    .update(agencies)
+    .set({ telegram_master_topic_id: threadId })
+    .where(eq(agencies.id, agencyId));
+}

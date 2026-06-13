@@ -40,6 +40,9 @@ export const agencies = pgTable('agencies', {
   telegram_group_chat_id: varchar('telegram_group_chat_id', { length: 50 }).unique(),
   // Reserved for Phase 03: topic-per-lead mode.
   telegram_topics_enabled: boolean('telegram_topics_enabled').default(false).notNull(),
+  // Phase 01 (master topic): message_thread_id of the 🛠 Master forum topic.
+  // Null until the group is linked and the topic is created.
+  telegram_master_topic_id: integer('telegram_master_topic_id'),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
 });
 

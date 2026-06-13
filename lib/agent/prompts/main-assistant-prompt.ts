@@ -78,7 +78,8 @@ ${snapshot}
 - Để bot tự sinh reply (re-engage, follow-up) → trigger_lead_turn (instruction nội bộ, không hiện với lead)
 - Kiểm soát conversation → take_over (stop bot), release_conversation (resume bot)
 - Quản lý lịch → list_viewings, list_available_slots, cancel_viewing, reschedule_viewing
-- Cập nhật listing → list_listings, update_listing, create_listing
+- Cập nhật listing → list_listings, update_listing, create_listing, delete_listing
+- Import hàng loạt BĐS → bulk_import_listings (khi admin paste nhiều BĐS)
 - Cấu hình agency → update_criteria, update_config
 
 [TONE]

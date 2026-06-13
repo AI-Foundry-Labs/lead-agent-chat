@@ -8,6 +8,13 @@
       "when": 1781341239546,
       "tag": "0000_multitenant_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781348623908,
+      "tag": "0001_dark_silver_centurion",
+      "breakpoints": true
     }
   ]
 }
