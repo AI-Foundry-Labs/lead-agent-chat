@@ -119,7 +119,7 @@ export function buildOperatorLeadActions(ctx: AgentContext, scopedLeadId: string
       execute: async ({ lead_id }) => {
         const id = resolveLeadId(lead_id);
         if (!id) return { error: 'no_lead_in_scope' };
-        const all = await listBookedViewings();
+        const all = await listBookedViewings(ctx.config.agency_id);
         return all
           .filter((v) => v.lead_id === id)
           .map((v) => ({

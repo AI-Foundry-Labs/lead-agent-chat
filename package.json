@@ -15,7 +15,10 @@
     "test": "node --require tsx/cjs --test eval_harness/unit/*.test.ts",
     "test:agent": "node --require tsx/cjs --test eval_harness/agent/prompt-construction/*.test.ts eval_harness/agent/tool-behavior/*.test.ts eval_harness/agent/thread-pipeline/*.test.ts eval_harness/agent/memory/*.test.ts eval_harness/agent/rules/*.test.ts",
     "test:smoke": "node --require tsx/cjs --test eval_harness/smoke/*.test.ts",
-    "test:all": "bash eval_harness/run-tests.sh"
+    "test:all": "bash eval_harness/run-tests.sh",
+    "db:migrate": "tsx --env-file=.env scripts/migrate.ts",
+    "telegram:webhook": "tsx --env-file=.env scripts/set-webhook.ts",
+    "agency:onboard": "tsx --env-file=.env scripts/onboard-agency.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.84",

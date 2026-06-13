@@ -34,6 +34,7 @@ function leadMemoryBlock(lead: Lead): string {
 
 const BASE_LEAD: Lead = {
   id: 'l1',
+  agency_id: 'agency-1',
   channel: 'web',
   language: 'fr',
   email: 'tarik@example.com',

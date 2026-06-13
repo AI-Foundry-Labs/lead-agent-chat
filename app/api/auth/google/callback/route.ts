@@ -1,8 +1,10 @@
 import { eq } from 'drizzle-orm';
 import { db, admins, getLeadByEmail, createLead, updateLead } from '@/lib/db';
+import { getOrCreateLeadTopics } from '@/lib/telegram/lead-topics';
 import { createAdminSession, setLeadCookie } from '@/lib/auth';
 import { fetchGoogleProfile, safeRedirectPath } from '@/lib/google-oauth';
 import { consumeOAuthState } from '@/lib/oauth-state';
+import { getDefaultAgency } from '@/lib/db/agencies';
 
 export const runtime = 'nodejs';
 
@@ -57,13 +59,26 @@ export async function GET(request: Request) {
       return Response.redirect(`${base}${stored.next}?login=ok`, 302);
     }
 
-    let lead = await getLeadByEmail(profile.email);
+    // Resolve agency from Host header (set by middleware); fall back to default.
+    const agencyId =
+      request.headers.get('x-agency-id') ??
+      (await getDefaultAgency())?.id;
+    if (!agencyId) {
+      return Response.redirect(`${base}${fallback}?login=google_error`, 302);
+    }
+
+    let lead = await getLeadByEmail(profile.email, agencyId);
     if (!lead) {
       lead = await createLead({
+        agency_id: agencyId,
         channel: 'web',
         email: profile.email,
         name: profile.name
       });
+      const newLeadId = lead.id;
+      void getOrCreateLeadTopics(agencyId, newLeadId).catch((err) =>
+        console.error('[google-callback] getOrCreateLeadTopics failed', newLeadId, err)
+      );
     } else if (profile.name && !lead.name) {
       lead = await updateLead(lead.id, { name: profile.name });
     }

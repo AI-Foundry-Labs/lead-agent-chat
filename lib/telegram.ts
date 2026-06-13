@@ -22,9 +22,18 @@ export function telegramConfigured(): boolean {
   return !!process.env.TELEGRAM_BOT_TOKEN;
 }
 
+/**
+ * Send a Telegram message to a private chat or a group topic.
+ *
+ * For group sends (with message_thread_id) callers SHOULD go through
+ * enqueueGroupSend (group-send-queue.ts) to respect the per-group rate limit.
+ * This function is kept as the low-level primitive and is also the path used
+ * by the queue itself.
+ */
 export async function sendTelegramMessage(
   chatId: string,
-  text: string
+  text: string,
+  opts?: { message_thread_id?: number }
 ): Promise<boolean> {
   const b = getBot();
   if (!b) {
@@ -32,10 +41,149 @@ export async function sendTelegramMessage(
     return false;
   }
   try {
-    await b.api.sendMessage(chatId, text);
+    await b.api.sendMessage(chatId, text, {
+      message_thread_id: opts?.message_thread_id
+    });
     return true;
   } catch (e) {
     console.error('[telegram] sendMessage failed:', e);
+    return false;
+  }
+}
+
+/**
+ * Fetch a single chat member's status and rights.
+ * Returns null on API error (e.g. bot not in chat, user not found).
+ */
+export async function getChatMember(
+  chatId: string,
+  userId: string | number
+): Promise<Record<string, unknown> | null> {
+  const b = getBot();
+  if (!b) {
+    console.warn('[telegram] not configured — getChatMember skipped');
+    return null;
+  }
+  try {
+    // grammY returns a ChatMember union type; cast to a plain record so callers
+    // can inspect any field without importing grammY's union types.
+    const member = await b.api.getChatMember(chatId, Number(userId));
+    return member as unknown as Record<string, unknown>;
+  } catch (e) {
+    console.error('[telegram] getChatMember failed:', e);
+    return null;
+  }
+}
+
+/**
+ * Fetch basic chat info (type, is_forum flag, etc.).
+ * Returns null on API error.
+ */
+export async function getChat(
+  chatId: string
+): Promise<Record<string, unknown> | null> {
+  const b = getBot();
+  if (!b) {
+    console.warn('[telegram] not configured — getChat skipped');
+    return null;
+  }
+  try {
+    const chat = await b.api.getChat(chatId);
+    return chat as unknown as Record<string, unknown>;
+  } catch (e) {
+    console.error('[telegram] getChat failed:', e);
+    return null;
+  }
+}
+
+// ─── Forum topic wrappers (supergroup forum mode) ─────────────────────────
+
+/**
+ * Create a forum topic in a supergroup and return the message_thread_id.
+ * Returns null on API error so callers can degrade gracefully.
+ */
+export async function createForumTopic(
+  chatId: string,
+  name: string
+): Promise<number | null> {
+  const b = getBot();
+  if (!b) {
+    console.warn('[telegram] not configured — createForumTopic skipped:', name);
+    return null;
+  }
+  try {
+    const result = await b.api.createForumTopic(chatId, name);
+    return result.message_thread_id;
+  } catch (e) {
+    console.error('[telegram] createForumTopic failed:', e);
+    return null;
+  }
+}
+
+/**
+ * Rename an existing forum topic. No-op on API error.
+ * Returns true on success.
+ */
+export async function editForumTopic(
+  chatId: string,
+  threadId: number,
+  name: string
+): Promise<boolean> {
+  const b = getBot();
+  if (!b) {
+    console.warn('[telegram] not configured — editForumTopic skipped');
+    return false;
+  }
+  try {
+    await b.api.editForumTopic(chatId, threadId, { name });
+    return true;
+  } catch (e) {
+    console.error('[telegram] editForumTopic failed:', e);
+    return false;
+  }
+}
+
+/**
+ * Close a forum topic (marks it as resolved/archived in the group).
+ * Returns true on success.
+ */
+export async function closeForumTopic(
+  chatId: string,
+  threadId: number
+): Promise<boolean> {
+  const b = getBot();
+  if (!b) {
+    console.warn('[telegram] not configured — closeForumTopic skipped');
+    return false;
+  }
+  try {
+    await b.api.closeForumTopic(chatId, threadId);
+    return true;
+  } catch (e) {
+    console.error('[telegram] closeForumTopic failed:', e);
+    return false;
+  }
+}
+
+/**
+ * React to a message with a single emoji (default 👍). Used to confirm an admin
+ * takeover message was relayed to the customer. Telegram only allows a fixed set
+ * of reaction emojis — 👍 is always valid. No-op on API error.
+ */
+export async function setMessageReaction(
+  chatId: string,
+  messageId: number,
+  emoji: '👍' = '👍'
+): Promise<boolean> {
+  const b = getBot();
+  if (!b) return false;
+  try {
+    await b.api.setMessageReaction(chatId, messageId, [
+      { type: 'emoji', emoji }
+    ]);
+    return true;
+  } catch (e) {
+    console.error('[telegram] setMessageReaction failed:', e);
     return false;
   }
 }

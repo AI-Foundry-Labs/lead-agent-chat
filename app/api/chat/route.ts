@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   createConversation,
   getConversation,
+  getListingById,
   getVisibleMessages,
   getActiveViewing,
   updateConversation
@@ -15,6 +16,7 @@ import {
 import { runAgentTurn } from '@/lib/agent/run';
 import { getLang } from '@/lib/i18n-server';
 import { formatSlot } from '@/lib/format';
+import { getDefaultAgency } from '@/lib/db/agencies';
 
 export const runtime = 'nodejs';
 
@@ -30,9 +32,15 @@ export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get('conversationId');
   if (!id) return Response.json({ error: 'conversationId required' }, { status: 400 });
   const leadId = await getLeadIdFromCookies();
+  const agencyId =
+    req.headers.get('x-agency-id') ??
+    (await getDefaultAgency())?.id;
+  if (!agencyId) {
+    return Response.json({ error: 'agency_not_configured' }, { status: 503 });
+  }
   let conversation;
   try {
-    conversation = await assertLeadChatAccess(id, leadId);
+    conversation = await assertLeadChatAccess(id, leadId, agencyId);
   } catch (e) {
     return toConversationAccessResponse(e) ?? Response.json({ error: 'error' }, { status: 500 });
   }
@@ -70,16 +78,32 @@ export async function POST(req: NextRequest) {
   const { conversationId, listingId, message } = parsed.data;
   const leadId = await getLeadIdFromCookies();
 
+  // Resolve agency upfront — needed for both access check and new conversation.
+  const agencyId =
+    req.headers.get('x-agency-id') ??
+    (await getDefaultAgency())?.id;
+  if (!agencyId) {
+    return Response.json({ error: 'agency_not_configured' }, { status: 503 });
+  }
+
   let conv = null;
   if (conversationId) {
     try {
-      conv = await assertLeadChatAccess(conversationId, leadId);
+      conv = await assertLeadChatAccess(conversationId, leadId, agencyId);
     } catch (e) {
       return toConversationAccessResponse(e) ?? Response.json({ error: 'error' }, { status: 500 });
     }
   }
   if (!conv) {
+    // Validate listingId belongs to this agency before creating a conversation.
+    if (listingId) {
+      const listing = await getListingById(listingId);
+      if (!listing || listing.agency_id !== agencyId) {
+        return Response.json({ error: 'invalid_listing' }, { status: 400 });
+      }
+    }
     conv = await createConversation({
+      agency_id: agencyId,
       type: 'lead',
       listing_id: listingId ?? null,
       lead_id: leadId,

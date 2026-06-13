@@ -3,7 +3,7 @@
  * Used by both main_assistant and operator agents to avoid duplication.
  */
 import {
-  listBookedViewings,
+  getViewingById,
   getListing,
   cancelViewing,
   rescheduleViewing
@@ -18,8 +18,7 @@ export async function cancelViewingWithMemory(
   calendarFallbackId: string,
   reason?: string
 ): Promise<{ ok: true; cancelled: true } | { error: string }> {
-  const viewings = await listBookedViewings();
-  const v = viewings.find((x) => x.id === viewingId);
+  const v = await getViewingById(viewingId);
   if (!v) return { error: 'viewing_not_found' };
 
   const listing = v.listing_id ? await getListing(v.listing_id) : null;
@@ -47,8 +46,7 @@ export async function rescheduleViewingWithMemory(
   newSlotIso: string,
   calendarFallbackId: string
 ): Promise<{ ok: true; new_slot: string } | { error: string }> {
-  const viewings = await listBookedViewings();
-  const v = viewings.find((x) => x.id === viewingId);
+  const v = await getViewingById(viewingId);
   if (!v) return { error: 'viewing_not_found' };
 
   const listing = v.listing_id ? await getListing(v.listing_id) : null;

@@ -15,6 +15,7 @@ import type { HandoffRule } from '../../../lib/types.ts';
 function rule(id: string, description: string, active: boolean, keywords: string[] = []): HandoffRule {
   return {
     id,
+    agency_id: 'agency-1',
     description,
     trigger_keywords: keywords,
     active,

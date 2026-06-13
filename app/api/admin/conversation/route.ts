@@ -11,12 +11,14 @@ export const runtime = 'nodejs';
 // Full thread + qualification for one lead (Conversations tab detail view).
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const leadId = req.nextUrl.searchParams.get('lead_id');
     if (!leadId) return Response.json({ error: 'lead_id required' }, { status: 400 });
 
     const lead = await getLeadById(leadId);
-    if (!lead) return Response.json({ error: 'not_found' }, { status: 404 });
+    if (!lead || lead.agency_id !== admin.agency_id) {
+      return Response.json({ error: 'not_found' }, { status: 404 });
+    }
 
     const conv = await getConversationByLeadId(leadId);
     const messages = conv ? await getVisibleMessages(conv.id) : [];

@@ -20,7 +20,8 @@ function msg(role: Message['role'], content: string, id = 'id-' + Math.random())
     role,
     content,
     is_draft: false,
-    is_visible: true,
+    tool_calls: null,
+    tool_results: null,
     timestamp: new Date()
   };
 }

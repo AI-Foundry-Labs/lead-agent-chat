@@ -17,6 +17,7 @@ import {
   getListing,
   createListing,
   updateListing,
+  deleteListing,
   listBookedViewings,
   getOrCreateLeadOperator,
   listConversationsByLeadId,
@@ -32,7 +33,7 @@ import {
 import { sendTelegramMessage } from '@/lib/telegram';
 import { getAvailableSlots } from '@/lib/calendar';
 import { dispatchReply } from '@/lib/dispatch';
-import { broadcastConversationUpdate } from '@/lib/events';
+import { broadcastConversationUpdate, broadcastAgencyDataChanged } from '@/lib/events';
 import { notifyAdmins } from '@/lib/notify';
 import { criterionSchema, listingSchema } from '@/lib/types';
 import { formatPrice, formatSlot } from '@/lib/format';
@@ -66,7 +67,7 @@ export function buildMainAssistantTools(
         limit: z.number().int().min(1).max(50).optional()
       }),
       execute: async ({ status, potential, listing_id, limit }) => {
-        let leads = await listLeads();
+        let leads = await listLeads(ctx.config.agency_id);
         if (status) leads = leads.filter((l) => l.status === status);
         if (potential) leads = leads.filter((l) => l.potential_status === potential);
         if (listing_id) leads = leads.filter((l) => l.listing_id === listing_id);
@@ -207,7 +208,7 @@ export function buildMainAssistantTools(
       description: 'List all viewings for a specific lead.',
       inputSchema: z.object({ lead_id: z.string() }),
       execute: async ({ lead_id }) => {
-        const all = await listBookedViewings();
+        const all = await listBookedViewings(ctx.config.agency_id);
         const filtered = all.filter((v) => v.lead_id === lead_id);
         return filtered.map((v) => ({
           id: v.id,
@@ -317,7 +318,7 @@ export function buildMainAssistantTools(
       description: 'List all property listings.',
       inputSchema: z.object({}),
       execute: async () => {
-        const listings = await listListings();
+        const listings = await listListings(ctx.config.agency_id);
         return listings.map((l) => ({
           id: l.id,
           title: l.title,
@@ -332,10 +333,16 @@ export function buildMainAssistantTools(
 
     create_listing: tool({
       description: 'Create a new property listing.',
-      inputSchema: listingSchema,
+      // agency_id is injected server-side from ctx; exclude from agent input schema
+      inputSchema: listingSchema.omit({ agency_id: true }),
       execute: async (input) => {
         // Normalize image_url: zod schema allows undefined, but Listing type requires null
-        const listing = await createListing({ ...input, image_url: input.image_url ?? null });
+        const listing = await createListing({
+          ...input,
+          agency_id: ctx.config.agency_id,
+          image_url: input.image_url ?? null
+        });
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, id: listing.id, title: listing.title };
       }
     }),
@@ -347,7 +354,55 @@ export function buildMainAssistantTools(
         const existing = await getListing(id);
         if (!existing) return { error: 'listing_not_found' };
         const updated = await updateListing(id, fields);
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, id: updated.id, title: updated.title };
+      }
+    }),
+
+    delete_listing: tool({
+      description: 'Permanently delete a property listing by ID.',
+      inputSchema: z.object({ id: z.string() }),
+      execute: async ({ id }) => {
+        const existing = await getListing(id);
+        if (!existing) return { error: 'listing_not_found' };
+        // Tenant guard: only allow deleting listings owned by this agency
+        if (existing.agency_id !== ctx.config.agency_id) return { error: 'forbidden' };
+        await deleteListing(id);
+        broadcastAgencyDataChanged(ctx.config.agency_id);
+        return { ok: true, id };
+      }
+    }),
+
+    bulk_import_listings: tool({
+      description:
+        'Import multiple property listings at once. The agent should parse the admin\'s pasted list/CSV-like text into structured listing objects and pass them here.',
+      inputSchema: z.object({
+        listings: z.array(listingSchema.omit({ agency_id: true })).min(1).max(50)
+      }),
+      execute: async ({ listings: items }) => {
+        const created: { id: string; title: string }[] = [];
+        const failed: { index: number; id?: string; reason: string }[] = [];
+
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          try {
+            const listing = await createListing({
+              ...item,
+              agency_id: ctx.config.agency_id,
+              image_url: item.image_url ?? null
+            });
+            created.push({ id: listing.id, title: listing.title });
+          } catch (err) {
+            failed.push({
+              index: i,
+              id: item.id,
+              reason: err instanceof Error ? err.message : String(err)
+            });
+          }
+        }
+
+        if (created.length > 0) broadcastAgencyDataChanged(ctx.config.agency_id);
+        return { ok: true, created, failed, total: items.length };
       }
     }),
 
@@ -357,7 +412,7 @@ export function buildMainAssistantTools(
       description: 'List all booked viewings across all leads.',
       inputSchema: z.object({}),
       execute: async () => {
-        const viewings = await listBookedViewings();
+        const viewings = await listBookedViewings(ctx.config.agency_id);
         return viewings.map((v) => ({
           id: v.id,
           lead_id: v.lead_id,
@@ -411,7 +466,7 @@ export function buildMainAssistantTools(
       description: 'Get lead pipeline counts by status and potential.',
       inputSchema: z.object({}),
       execute: async () => {
-        const leads = await listLeads();
+        const leads = await listLeads(ctx.config.agency_id);
         const byStatus = leads.reduce<Record<string, number>>((acc, l) => {
           acc[l.status ?? 'unknown'] = (acc[l.status ?? 'unknown'] ?? 0) + 1;
           return acc;
@@ -436,10 +491,10 @@ export function buildMainAssistantTools(
       description: 'Summary of the last 7 days: new leads, bookings, handoffs.',
       inputSchema: z.object({}),
       execute: async () => {
-        const leads = await listLeads();
+        const leads = await listLeads(ctx.config.agency_id);
         const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         const recent = leads.filter((l) => l.created_at && new Date(l.created_at) >= cutoff);
-        const viewings = await listBookedViewings();
+        const viewings = await listBookedViewings(ctx.config.agency_id);
         const recentViewings = viewings.filter(
           (v) => v.created_at && new Date(v.created_at) >= cutoff
         );
@@ -464,7 +519,7 @@ export function buildMainAssistantTools(
       execute: async ({ lead_id, question }) => {
         const lead = await getLeadById(lead_id);
         if (!lead) return { error: 'lead_not_found' };
-        const operatorConv = await getOrCreateLeadOperator(lead_id);
+        const operatorConv = await getOrCreateLeadOperator(lead_id, ctx.config.agency_id);
         const prompt = question
           ? `${question} Please review this lead's full profile and give a concise briefing.`
           : `Please review this lead's full profile and conversation history. Give me a concise briefing: who they are, what they want, their qualification status, and recommended next action.`;
@@ -514,7 +569,7 @@ export function buildMainAssistantTools(
       }),
       execute: async ({ message, potential, inactive_days }) => {
         const cutoff = new Date(Date.now() - inactive_days * 24 * 60 * 60 * 1000);
-        let allLeads = await listLeads();
+        let allLeads = await listLeads(ctx.config.agency_id);
         if (potential) allLeads = allLeads.filter((l) => l.potential_status === potential);
         else allLeads = allLeads.filter((l) => l.potential_status === 'hot' || l.potential_status === 'warm');
         // Only active/qualified leads (not already booked/abandoned)
@@ -544,9 +599,9 @@ export function buildMainAssistantTools(
       inputSchema: z.object({}),
       execute: async () => {
         const [allLeads, allViewings, allListings] = await Promise.all([
-          listLeads(),
-          listBookedViewings(),
-          listListings()
+          listLeads(ctx.config.agency_id),
+          listBookedViewings(ctx.config.agency_id),
+          listListings(ctx.config.agency_id)
         ]);
         return allListings.map((listing) => {
           const listingLeads = allLeads.filter((l) => l.listing_id === listing.id);
@@ -578,7 +633,7 @@ export function buildMainAssistantTools(
       description: 'List all handoff/escalation rules (active and inactive).',
       inputSchema: z.object({}),
       execute: async () => {
-        const rules = await listHandoffRules();
+        const rules = await listHandoffRules(ctx.config.agency_id);
         return rules.map((r) => ({
           id: r.id,
           description: r.description,
@@ -595,7 +650,8 @@ export function buildMainAssistantTools(
         trigger_keywords: z.array(z.string().min(1)).min(1).describe('Keywords that trigger this rule')
       }),
       execute: async ({ description, trigger_keywords }) => {
-        const rule = await createHandoffRule({ description, trigger_keywords });
+        const rule = await createHandoffRule({ agency_id: ctx.config.agency_id, description, trigger_keywords });
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, id: rule.id, description: rule.description, active: rule.active };
       }
     }),
@@ -608,6 +664,7 @@ export function buildMainAssistantTools(
       }),
       execute: async ({ rule_id, active }) => {
         const rule = await toggleHandoffRule(rule_id, active);
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, id: rule.id, description: rule.description, active: rule.active };
       }
     }),
@@ -617,6 +674,7 @@ export function buildMainAssistantTools(
       inputSchema: z.object({ rule_id: z.string() }),
       execute: async ({ rule_id }) => {
         await deleteHandoffRule(rule_id);
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, deleted: rule_id };
       }
     }),
@@ -632,7 +690,7 @@ export function buildMainAssistantTools(
         listing_id: z.string().optional()
       }),
       execute: async ({ message, potential, listing_id }) => {
-        let allLeads = await listLeads();
+        let allLeads = await listLeads(ctx.config.agency_id);
         allLeads = allLeads.filter((l) => !!l.telegram_user_id);
         if (potential) allLeads = allLeads.filter((l) => l.potential_status === potential);
         if (listing_id) allLeads = allLeads.filter((l) => l.listing_id === listing_id);
@@ -657,7 +715,8 @@ export function buildMainAssistantTools(
       description: 'Replace agency qualification criteria. Takes effect on next lead turn.',
       inputSchema: z.object({ criteria: z.array(criterionSchema).min(1) }),
       execute: async ({ criteria }) => {
-        ctx.config = await updateCriteria(criteria);
+        ctx.config = await updateCriteria(ctx.config.agency_id, criteria);
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, criteria: ctx.config.qualification_criteria };
       }
     }),
@@ -674,6 +733,7 @@ export function buildMainAssistantTools(
           name: name ?? ctx.config.name,
           tone: tone ?? ctx.config.tone
         });
+        broadcastAgencyDataChanged(ctx.config.agency_id);
         return { ok: true, name: ctx.config.name };
       }
     }),

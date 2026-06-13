@@ -16,7 +16,8 @@ async function formatThreadLine(
       : listing.title
     : 'general';
   const summary = t.thread_summary?.trim() || '(short thread — no rolled summary yet)';
-  return `- thread:${t.id.slice(0, 8)} · ${t.primary_channel} · ${listingLabel} · mode:${t.mode} · updated:${t.updated_at.toISOString().slice(0, 10)}\n  ${summary}`;
+  // Full conversation_id — get_thread / send_reply require the complete UUID.
+  return `- conversation_id:${t.id} · ${t.primary_channel} · ${listingLabel} · mode:${t.mode} · updated:${t.updated_at.toISOString().slice(0, 10)}\n  ${summary}`;
 }
 
 export async function buildLeadThreadsReportBlock(
@@ -34,9 +35,10 @@ ${lines.join('\n')}`;
 }
 
 export async function buildAnonymousThreadsReportBlock(
+  agencyId: string,
   lang: Language = 'fr'
 ): Promise<string> {
-  const threads = await listAnonymousVisitorThreads();
+  const threads = await listAnonymousVisitorThreads(agencyId);
   if (threads.length === 0) {
     return '[ANONYMOUS VISITOR THREADS]\nNo active anonymous threads.';
   }

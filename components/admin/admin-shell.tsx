@@ -46,6 +46,31 @@ export function AdminShell() {
     void refetch();
   }, [refetch]);
 
+  // SSE: subscribe to agency-data-changed events so the dashboard auto-updates
+  // when the agent mutates config / listings / handoff rules.
+  useEffect(() => {
+    const es = new EventSource('/api/admin/stream-agency');
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    es.onmessage = (e) => {
+      try {
+        const payload = JSON.parse(e.data as string) as { type: string };
+        if (payload.type !== 'agency-data') return;
+      } catch {
+        return;
+      }
+      // Debounce: coalesce rapid bursts (e.g. bulk mutations) into a single refetch
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => { void refetch(); }, 500);
+    };
+    es.onerror = () => es.close();
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      es.close();
+    };
+  }, [refetch]);
+
   async function logout() {
     await fetch('/api/auth/admin/logout', { method: 'POST' });
     router.push('/admin/login');

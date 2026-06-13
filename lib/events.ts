@@ -6,6 +6,30 @@ type Subscriber = () => void;
 const conversationSubs = new Map<string, Set<Subscriber>>();
 const globalSubs = new Set<Subscriber>();
 
+// Agency-scoped channel: admin dashboard subscribers are notified when
+// config / listings / handoff rules change for their agency.
+const agencySubs = new Map<string, Set<Subscriber>>();
+
+/** Subscribe to agency-data-changed events for a specific agency. */
+export function subscribeAgencyData(agencyId: string, fn: Subscriber): () => void {
+  let set = agencySubs.get(agencyId);
+  if (!set) {
+    set = new Set();
+    agencySubs.set(agencyId, set);
+  }
+  set.add(fn);
+  return () => {
+    set!.delete(fn);
+    if (set!.size === 0) agencySubs.delete(agencyId);
+  };
+}
+
+/** Notify all agency-data subscribers for the given agency. */
+export function broadcastAgencyDataChanged(agencyId: string): void {
+  const set = agencySubs.get(agencyId);
+  if (set) for (const fn of set) safe(fn);
+}
+
 export function subscribeConversation(
   conversationId: string,
   fn: Subscriber

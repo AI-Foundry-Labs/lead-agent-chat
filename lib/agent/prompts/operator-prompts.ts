@@ -96,7 +96,7 @@ Proactively keep status/potential and long-term memory accurate as you learn new
 ${REPLY_RULE}`;
   }
 
-  const threadsBlock = await buildAnonymousThreadsReportBlock(lang);
+  const threadsBlock = await buildAnonymousThreadsReportBlock(config.agency_id, lang);
   return `[ROLE]
 You are the anonymous-visitors agent at ${config.name}. You manage ALL unidentified visitors
 (no email/name captured yet) as a single pool. Admin ${adminName ?? 'user'} talks to you here.

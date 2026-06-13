@@ -3,13 +3,16 @@ import { ListingCard } from '@/components/listings/listing-card';
 import { PageHeader } from '@/components/layout/page-header';
 import { getLang } from '@/lib/i18n-server';
 import { getDict } from '@/lib/i18n';
+import { getRequestAgencyId } from '@/lib/agency-server';
 
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
   const lang = await getLang();
   const t = getDict(lang);
-  const listings = await listListings();
+  // Public browse is scoped to the agency resolved from the request Host.
+  const agencyId = await getRequestAgencyId();
+  const listings = agencyId ? await listListings(agencyId) : [];
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 sm:py-14">

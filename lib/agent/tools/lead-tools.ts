@@ -55,7 +55,7 @@ export function buildLeadTools(ctx: AgentContext) {
         query: z.string().optional()
       }),
       execute: async ({ max_price, min_rooms, query }) => {
-        const all = await listListings();
+        const all = await listListings(ctx.config.agency_id);
         const q = query?.toLowerCase();
         const matches = all.filter((l) => {
           if (max_price && l.price > max_price) return false;
@@ -170,6 +170,7 @@ export function buildLeadTools(ctx: AgentContext) {
           details: `Potential: ${lead.potential_status ?? '—'}\n${details}`
         });
         await createBookedViewing({
+          agency_id: ctx.config.agency_id,
           conversation_id: ctx.conversation.id,
           lead_id: lead.id,
           listing_id: listing.id,
