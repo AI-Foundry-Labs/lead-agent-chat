@@ -102,7 +102,18 @@ async function trySend(
         (err?.error_code === 429) ||
         (typeof err?.message === 'string' && err.message.includes('429'));
 
-      if (isRateLimit) {
+      // Transient network failures (no HTTP status) — grammY HttpError /
+      // node-fetch FetchError — are worth retrying, not dropping.
+      const isNetwork =
+        err?.error_code === undefined &&
+        (err?.name === 'HttpError' ||
+          err?.name === 'FetchError' ||
+          (typeof err?.message === 'string' &&
+            /network request|fetch failed|ECONN|ETIMEDOUT|socket hang/i.test(
+              err.message
+            )));
+
+      if (isRateLimit || isNetwork) {
         const retryAfter =
           (err?.parameters as Record<string, unknown> | undefined)?.retry_after;
         const waitMs =
@@ -110,10 +121,12 @@ async function trySend(
             ? retryAfter * 1_000
             : DEFAULT_BACKOFF_MS;
         console.warn(
-          `[group-send-queue] 429 on chatId=${chatId}; backing off ${waitMs}ms (attempt ${attempts})`
+          `[group-send-queue] ${isRateLimit ? '429' : 'network'} on chatId=${chatId}; ` +
+          `retry in ${waitMs}ms (attempt ${attempts})`
         );
         await delay(waitMs);
       } else {
+        // Real API error (bad thread id, bot kicked, etc.) — don't retry.
         console.error('[group-send-queue] sendMessage error on chatId=' + chatId + ':', e);
         item.resolve(false);
         return;
