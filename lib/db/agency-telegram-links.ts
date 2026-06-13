@@ -42,8 +42,11 @@ export async function bindTelegramGroupToAgency(
   agencyId: string,
   groupChatId: string
 ): Promise<void> {
+  // The caller (handleAgencyGroupLink) only binds after verify-agency-group has
+  // confirmed the chat is a forum, so enabling topics here is safe and required —
+  // getOrCreateLeadTopics skips topic creation unless telegram_topics_enabled is true.
   await db
     .update(agencies)
-    .set({ telegram_group_chat_id: groupChatId })
+    .set({ telegram_group_chat_id: groupChatId, telegram_topics_enabled: true })
     .where(eq(agencies.id, agencyId));
 }

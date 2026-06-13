@@ -4,6 +4,8 @@ export interface TelegramUpdate {
   // Unique monotonic ID — used for idempotency deduplication.
   update_id?: number;
   message?: {
+    // Per-chat message id — used to react to / reply to a specific message.
+    message_id?: number;
     text?: string;
     // Thread id when the message belongs to a forum topic.
     message_thread_id?: number;

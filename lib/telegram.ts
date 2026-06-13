@@ -165,6 +165,29 @@ export async function closeForumTopic(
   }
 }
 
+/**
+ * React to a message with a single emoji (default 👍). Used to confirm an admin
+ * takeover message was relayed to the customer. Telegram only allows a fixed set
+ * of reaction emojis — 👍 is always valid. No-op on API error.
+ */
+export async function setMessageReaction(
+  chatId: string,
+  messageId: number,
+  emoji: '👍' = '👍'
+): Promise<boolean> {
+  const b = getBot();
+  if (!b) return false;
+  try {
+    await b.api.setMessageReaction(chatId, messageId, [
+      { type: 'emoji', emoji }
+    ]);
+    return true;
+  } catch (e) {
+    console.error('[telegram] setMessageReaction failed:', e);
+    return false;
+  }
+}
+
 // Fan a notification out to every admin who has linked their Telegram account.
 export async function sendToLinkedAdmins(text: string): Promise<number> {
   const rows = await db

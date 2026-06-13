@@ -95,10 +95,11 @@ export async function mirrorLeadTurnToTopic(
     if (!topics.group_chat_id) return;
     if (!topics.conversation_topic_id) return;
 
+    // Icons disambiguate who said what in the conversation mirror.
     const prefixMap: Record<'lead' | 'agent' | 'admin', string> = {
-      lead: 'Lead',
-      agent: 'Agent',
-      admin: 'Conseiller'
+      lead: '🧑 Lead',
+      agent: '🤖 Agent',
+      admin: '🧑‍💼 Conseiller'
     };
     const prefix = prefixMap[role];
     const text = `${prefix}: ${content}`;

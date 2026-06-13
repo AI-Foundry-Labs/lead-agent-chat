@@ -5,23 +5,21 @@
  *   private  → handle-private-telegram-message.ts (admin/lead DM flows)
  *   group/supergroup → group routing (Phase 04):
  *       /link <token>          → bind group to agency (Phase 02)
- *       Topic 2 (assistant)    → operator copilot turn
- *       Topic 1 (conversation) → takeover stub (Phase 05)
+ *       Topic 2 (assistant)    → operator copilot turn (can send_reply to lead)
+ *       Topic 1 (conversation) → read-only mirror; typing → pointer to 🤖
  *       general / unknown      → ignore
  *
  * Echo-loop safety: is_bot filter + idempotency by update_id.
  */
 
 import { consumeAgencyTelegramLink } from '@/lib/auth';
-import { getAgencyByTelegramGroup, bindTelegramGroupToAgency, getConversation, updateConversation, addMessage } from '@/lib/db';
+import { getAgencyByTelegramGroup, bindTelegramGroupToAgency } from '@/lib/db';
 import { sendTelegramMessage, getBot } from '@/lib/telegram';
 import { enqueueGroupSend } from '@/lib/telegram/group-send-queue';
 import { verifyAgencyGroup } from '@/lib/telegram/verify-agency-group';
-import { resolveAgencyAdmin } from '@/lib/telegram/resolve-agency-admin';
+import { resolveActingAdmin } from '@/lib/telegram/resolve-agency-admin';
 import { routeGroupMessage } from '@/lib/telegram/route-group-message';
 import { runAgentTurn } from '@/lib/agent/run';
-import { dispatchReply } from '@/lib/dispatch';
-import { broadcastConversationUpdate } from '@/lib/events';
 import {
   handleAdminStart,
   handleLeadStart,
@@ -116,12 +114,14 @@ async function handleOperatorTopicMessage(
     console.warn('[group] Topic 2: no operator_conversation_id for lead', mapping.lead_id);
     return;
   }
-  const admin = await resolveAgencyAdmin(fromId, mapping.agency_id);
+  // Group is agency-private → any member is trusted; attribute to the sender's
+  // linked admin or fall back to the agency's primary admin.
+  const admin = await resolveActingAdmin(fromId, mapping.agency_id);
   if (!admin) {
     void enqueueGroupSend(
       chatId,
-      '❌ Identifiez-vous d\'abord en liant votre compte Telegram depuis l\'interface web.\n' +
-      '❌ Link your Telegram first from the web interface before using the assistant topic.',
+      '❌ Aucun administrateur trouvé pour cette agence.\n' +
+      '❌ No admin found for this agency.',
       { threadId: mapping.assistant_topic_id, kind: 'critical' }
     );
     return;
@@ -142,77 +142,25 @@ async function handleOperatorTopicMessage(
 }
 
 /**
- * Topic 1 (💬 Conversation): takeover relay.
+ * Topic 1 (💬 Conversation): READ-ONLY mirror of the lead↔agent conversation.
  *
- * Security: only resolveAgencyAdmin-mapped admins may take over or resume.
- * Unmapped sender → bilingual rejection hint, no fallback.
- *
- * /resume command: set conv.mode='agent' and post bilingual resume notice.
- * Any other text: relay to customer's real channel; flip mode to 'manual' first
- * if not already (idempotent). Do NOT echo back into Topic 1 (admin already
- * sees their own message there).
+ * This topic only shows the conversation (🧑 Lead / 🤖 Agent / 🧑‍💼 Conseiller).
+ * Admins do NOT reply here — to message the customer they either give the agent
+ * an instruction in the 🤖 Assistant topic (which calls send_reply) or use the
+ * web /admin interface. A message typed here just gets a pointer back to 🤖.
  */
-async function handleAgencyTakeoverMessage(
+async function handleConversationTopicMessage(
   chatId: string,
-  mapping: LeadTelegramTopics,
-  fromId: string,
-  text: string
+  mapping: LeadTelegramTopics
 ): Promise<void> {
-  // Authorization: must be a mapped agency admin.
-  const admin = await resolveAgencyAdmin(fromId, mapping.agency_id);
-  if (!admin) {
-    void enqueueGroupSend(
-      chatId,
-      '❌ Compte non lié. Liez votre Telegram depuis l\'interface web pour prendre en charge ce lead.\n' +
-      '❌ Account not linked. Link your Telegram from the web interface to handle this lead.',
-      { threadId: mapping.conversation_topic_id, kind: 'critical' }
-    );
-    return;
-  }
-
-  if (!mapping.lead_conversation_id) {
-    console.warn('[group] Topic 1: no lead_conversation_id for lead', mapping.lead_id);
-    return;
-  }
-
-  const conv = await getConversation(mapping.lead_conversation_id);
-  if (!conv) {
-    console.warn('[group] Topic 1: conversation not found', mapping.lead_conversation_id);
-    return;
-  }
-
-  const adminName = admin.name ?? admin.email;
-
-  // /resume: return control to the agent.
-  if (text.trim().startsWith('/resume')) {
-    if (conv.mode !== 'agent') {
-      await updateConversation(conv.id, { mode: 'agent' });
-    }
-    void enqueueGroupSend(
-      chatId,
-      `🤖 Agent réactivé par ${adminName}. Le bot reprend les réponses automatiques.\n` +
-      `🤖 Agent resumed by ${adminName}. The bot is now handling replies again.`,
-      { threadId: mapping.conversation_topic_id, kind: 'critical' }
-    );
-    broadcastConversationUpdate(conv.id);
-    return;
-  }
-
-  // Takeover: flip mode to 'manual' if not already, post takeover notice.
-  if (conv.mode !== 'manual') {
-    await updateConversation(conv.id, { mode: 'manual' });
-    void enqueueGroupSend(
-      chatId,
-      `🧑‍💼 Prise en charge par ${adminName}. Le bot est mis en pause.\n` +
-      `🧑‍💼 Taken over by ${adminName}. The bot is now paused.`,
-      { threadId: mapping.conversation_topic_id, kind: 'critical' }
-    );
-  }
-
-  // Persist admin message and relay to customer's real channel.
-  await addMessage({ conversation_id: conv.id, role: 'admin', content: text });
-  await dispatchReply(conv, text);
-  broadcastConversationUpdate(conv.id);
+  void enqueueGroupSend(
+    chatId,
+    'ℹ️ Ce fil affiche seulement la conversation. Pour répondre au client, ' +
+    'donnez la consigne à l’assistant dans le sujet 🤖 Assistant, ou utilisez l’interface web.\n' +
+    'ℹ️ This thread only shows the conversation. To reply to the customer, instruct the ' +
+    'assistant in the 🤖 Assistant topic, or use the web interface.',
+    { threadId: mapping.conversation_topic_id, kind: 'critical' }
+  );
 }
 
 // ─── Main dispatcher ───────────────────────────────────────────────────────
@@ -256,7 +204,7 @@ export async function handleTelegramUpdate(
       return 'group';
     }
     if (route.kind === 'topic1_conversation' && route.mapping) {
-      await handleAgencyTakeoverMessage(chatId, route.mapping, fromId, text);
+      await handleConversationTopicMessage(chatId, route.mapping);
       return 'group';
     }
     return 'ignored'; // general / unknown thread
