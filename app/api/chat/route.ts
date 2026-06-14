@@ -8,7 +8,13 @@ import {
   getActiveViewing,
   updateConversation
 } from '@/lib/db';
-import { getLeadIdFromCookies, setLeadCookie } from '@/lib/auth';
+import {
+  getLeadIdFromCookies,
+  setLeadCookie,
+  clearGuestConvCookie,
+  setGuestConvCookie,
+  getGuestConvId
+} from '@/lib/auth';
 import {
   assertLeadChatAccess,
   toConversationAccessResponse
@@ -28,9 +34,18 @@ const postSchema = z.object({
 });
 
 // GET /api/chat?conversationId= — fetch conversation state + thread (for SSE refetch).
+// Also accepts ?listingId= (without conversationId) to restore an anonymous guest session from cookie.
 export async function GET(req: NextRequest) {
-  const id = req.nextUrl.searchParams.get('conversationId');
-  if (!id) return Response.json({ error: 'conversationId required' }, { status: 400 });
+  let id = req.nextUrl.searchParams.get('conversationId');
+  const listingId = req.nextUrl.searchParams.get('listingId');
+
+  // No conversationId? Try to restore from guest cookie using listingId.
+  if (!id) {
+    if (!listingId) return Response.json({ error: 'conversationId required' }, { status: 400 });
+    id = await getGuestConvId(listingId);
+    if (!id) return Response.json({ conversation: null, messages: [], viewing: null });
+  }
+
   const leadId = await getLeadIdFromCookies();
   const agencyId =
     req.headers.get('x-agency-id') ??
@@ -86,12 +101,19 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'agency_not_configured' }, { status: 503 });
   }
 
+  // Resolve existing conversation: prefer explicit conversationId, then guest cookie.
+  const resolvedId = conversationId ?? await getGuestConvId(listingId ?? null);
   let conv = null;
-  if (conversationId) {
+  if (resolvedId) {
     try {
-      conv = await assertLeadChatAccess(conversationId, leadId, agencyId);
+      conv = await assertLeadChatAccess(resolvedId, leadId, agencyId);
     } catch (e) {
-      return toConversationAccessResponse(e) ?? Response.json({ error: 'error' }, { status: 500 });
+      // Guest cookie may point to a stale/invalid conversation — fall through to create new.
+      if (!conversationId) {
+        conv = null;
+      } else {
+        return toConversationAccessResponse(e) ?? Response.json({ error: 'error' }, { status: 500 });
+      }
     }
   }
   if (!conv) {
@@ -109,6 +131,8 @@ export async function POST(req: NextRequest) {
       lead_id: leadId,
       primary_channel: 'web'
     });
+    // Persist new conversationId in guest cookie so page refreshes resume this thread.
+    await setGuestConvCookie(conv.id, listingId ?? null);
   } else if (leadId && !conv.lead_id) {
     // A visitor logged in mid-conversation — attach their lead identity.
     conv = await updateConversation(conv.id, { lead_id: leadId });
@@ -124,7 +148,9 @@ export async function POST(req: NextRequest) {
     if (!leadId) {
       const refreshed = await getConversation(conv.id);
       if (refreshed?.lead_id) {
+        // Visitor promoted to lead: set persistent session, clear anonymous guest cookie.
         await setLeadCookie(refreshed.lead_id);
+        await clearGuestConvCookie();
       }
     }
 

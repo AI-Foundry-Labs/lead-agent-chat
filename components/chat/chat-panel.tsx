@@ -50,18 +50,32 @@ export function ChatPanel({
   const { t, lang } = useLang();
 
   useEffect(() => {
-    if (!initialConversationId) return;
-    setConversationId(initialConversationId);
-    setLoading(true);
-    fetch(`/api/chat?conversationId=${initialConversationId}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!data) return;
-        setMessages(data.messages ?? []);
-        setMode(data.conversation?.mode ?? null);
-        setViewing(data.viewing ?? null);
-      })
-      .finally(() => setLoading(false));
+    if (initialConversationId) {
+      // Explicit conversation (e.g. threads page) — load directly.
+      setConversationId(initialConversationId);
+      setLoading(true);
+      fetch(`/api/chat?conversationId=${initialConversationId}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data) return;
+          setMessages(data.messages ?? []);
+          setMode(data.conversation?.mode ?? null);
+          setViewing(data.viewing ?? null);
+        })
+        .finally(() => setLoading(false));
+    } else {
+      // Anonymous listing page — try to restore from guest cookie via server.
+      fetch(`/api/chat?listingId=${encodeURIComponent(listingId)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data?.conversation?.id) return;
+          setConversationId(data.conversation.id);
+          setMessages(data.messages ?? []);
+          setMode(data.conversation?.mode ?? null);
+          setViewing(data.viewing ?? null);
+        });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConversationId]);
 
   useEffect(() => {
