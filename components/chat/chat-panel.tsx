@@ -115,12 +115,9 @@ export function ChatPanel({
         setConversationId(data.conversationId);
         if (trackForClaim) addPendingConversationId(data.conversationId);
       }
-      if (data.reply) {
-        setMessages((m) => [
-          ...m,
-          { id: `a-${Date.now()}`, role: 'assistant', content: data.reply }
-        ]);
-      } else if (data.error) {
+      // SSE stream delivers the final messages from DB — no need to append reply here.
+      // Adding it here too would duplicate the assistant message (race with broadcast).
+      if (data.error) {
         setMessages((m) => [
           ...m,
           {

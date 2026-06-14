@@ -3,7 +3,7 @@ import {
   getLeadById,
   updateConversation
 } from '@/lib/db';
-import type { AgencyConfig, Conversation, Lead } from '@/lib/types';
+import type { AgencyConfig, Conversation, Language, Lead } from '@/lib/types';
 import { getOrCreateLeadTopics } from '@/lib/telegram/lead-topics';
 
 // Shared context handed to every tool's execute closure. Mutable so that lazily
@@ -11,6 +11,7 @@ import { getOrCreateLeadTopics } from '@/lib/telegram/lead-topics';
 export interface AgentContext {
   conversation: Conversation;
   config: AgencyConfig;
+  lang: Language;
 }
 
 // A lead-facing conversation may start anonymous (conversation.lead_id == null).
