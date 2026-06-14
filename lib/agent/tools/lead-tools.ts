@@ -19,6 +19,7 @@ import { issueLeadTelegramLinkToken } from '@/lib/auth';
 import { buildLeadTelegramLinkInfo } from '@/lib/telegram/build-lead-telegram-link';
 import { telegramConfigured } from '@/lib/telegram';
 import { cancelViewingWithMemory, rescheduleViewingWithMemory } from '@/lib/agent/viewing-actions';
+import { syncLeadStatusToTelegram } from '@/lib/telegram/lead-status-marker';
 import { notif } from '@/lib/agent/notification-strings';
 import type { AgentContext } from './context';
 import { ensureLead } from './context';
@@ -91,6 +92,7 @@ export function buildLeadTools(ctx: AgentContext) {
       }),
       execute: async ({ values, potential_status, reason }) => {
         const lead = await ensureLead(ctx);
+        const prevPotential = lead.potential_status;
         const merged = { ...lead.qual_values, ...values };
         const allKeys = ctx.config.qualification_criteria.map((c) => c.key);
         const complete = allKeys.every((k) => merged[k]);
@@ -101,6 +103,11 @@ export function buildLeadTools(ctx: AgentContext) {
           // Only promote to 'qualified' from 'active' — never downgrade booked/handoff/abandoned.
           status: complete && lead.status === 'active' ? 'qualified' : lead.status
         });
+
+        // Surface a hot/warm/cold change in the agency's Telegram topic (off-path, guarded).
+        void syncLeadStatusToTelegram(
+          ctx.config.agency_id, lead.id, prevPotential, potential_status, reason
+        ).catch((e) => console.error('[lead-tools] syncLeadStatusToTelegram failed:', e));
         scheduleAppendLeadLongTermFacts(
           lead.id,
           [
@@ -242,10 +249,19 @@ export function buildLeadTools(ctx: AgentContext) {
       }),
       execute: async ({ potential_status, status, memory_note }) => {
         const lead = await ensureLead(ctx);
+        const prevPotential = lead.potential_status;
         const updated = await updateLead(lead.id, {
           ...(potential_status !== undefined && { potential_status }),
           ...(status !== undefined && { status })
         });
+
+        // Surface a hot/warm/cold change in the agency's Telegram topic (off-path, guarded).
+        if (potential_status !== undefined) {
+          void syncLeadStatusToTelegram(
+            ctx.config.agency_id, lead.id, prevPotential, potential_status, memory_note
+          ).catch((e) => console.error('[lead-tools] syncLeadStatusToTelegram failed:', e));
+        }
+
         const date = new Date().toISOString().slice(0, 10);
         const parts = [
           status ? `status→${status}` : '',
