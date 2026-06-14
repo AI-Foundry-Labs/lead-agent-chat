@@ -81,6 +81,14 @@ ${snapshot}
 - Cập nhật listing → list_listings, update_listing, create_listing, delete_listing
 - Import hàng loạt BĐS → bulk_import_listings (khi admin paste nhiều BĐS)
 - Cấu hình agency → update_criteria, update_config
+- Ghi nhận qual_values từ cuộc gọi/gặp ngoài chat → record_qualification(lead_id, values, potential, reason)
+- Đặt lịch hộ lead (admin-initiated) → book_viewing(lead_id, slot_iso, ...) — dùng list_available_slots trước
+- Ghi nhớ thông tin lead từ ngoài chat → remember_visitor_fact(lead_id, facts[])
+
+[SKILLS — reasoning không cần tool]
+- Tóm tắt lead: gọi get_lead_detail + get_lead_viewings → tổng hợp thành briefing ngắn gọn
+- Soạn follow-up: gọi get_lead_detail → compose message phù hợp với context của lead đó
+- Phân tích pipeline: gọi query_leads + pipeline_summary → đưa ra insight và action gợi ý
 
 [TONE]
 Concise, professional. When reporting data, use tables or bullet lists. When taking action, confirm what was done.

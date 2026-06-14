@@ -37,7 +37,19 @@ const updateLeadStatusSchema = z.object({
 });
 
 const rememberVisitorFactSchema = z.object({
-  facts: z.array(z.string().max(500)).min(1).max(10)
+  facts: z.array(z.string().max(800)).min(1).max(20)
+});
+
+const getLeadViewingsSchema = z.object({});
+
+const cancelViewingSchema = z.object({
+  viewing_id: z.string(),
+  reason: z.string().max(300).optional()
+});
+
+const rescheduleViewingSchema = z.object({
+  viewing_id: z.string(),
+  new_slot_iso: z.string()
 });
 
 const getAvailableSlotsSchema = z.object({
@@ -301,18 +313,92 @@ describe('remember_visitor_fact schema', () => {
     assert.ok(!result.success, 'at least one fact required');
   });
 
-  it('rejects more than 10 facts', () => {
+  it('rejects more than 20 facts', () => {
     const result = rememberVisitorFactSchema.safeParse({
-      facts: Array.from({ length: 11 }, (_, i) => `fact ${i}`)
+      facts: Array.from({ length: 21 }, (_, i) => `fact ${i}`)
     });
-    assert.ok(!result.success, 'max 10 facts per call');
+    assert.ok(!result.success, 'max 20 facts per call');
   });
 
-  it('rejects a fact exceeding 500 chars', () => {
+  it('accepts exactly 20 facts (boundary)', () => {
     const result = rememberVisitorFactSchema.safeParse({
-      facts: ['x'.repeat(501)]
+      facts: Array.from({ length: 20 }, (_, i) => `fact ${i}`)
     });
-    assert.ok(!result.success, 'facts must be ≤ 500 chars');
+    assert.ok(result.success, '20 facts is the maximum allowed');
+  });
+
+  it('rejects a fact exceeding 800 chars', () => {
+    const result = rememberVisitorFactSchema.safeParse({
+      facts: ['x'.repeat(801)]
+    });
+    assert.ok(!result.success, 'facts must be ≤ 800 chars');
+  });
+
+  it('accepts a fact exactly at 800 chars (boundary)', () => {
+    const result = rememberVisitorFactSchema.safeParse({
+      facts: ['x'.repeat(800)]
+    });
+    assert.ok(result.success, '800 chars is within the limit');
+  });
+});
+
+// ── get_lead_viewings schema ───────────────────────────────────────────────────
+
+describe('get_lead_viewings schema (lead)', () => {
+  it('accepts empty object (no input required)', () => {
+    assert.ok(getLeadViewingsSchema.safeParse({}).success);
+  });
+
+  it('ignores extra fields silently (zod default)', () => {
+    // zod strips unknown keys by default — schema still passes
+    assert.ok(getLeadViewingsSchema.safeParse({ unexpected: 'value' }).success);
+  });
+});
+
+// ── cancel_viewing schema (lead) ───────────────────────────────────────────────
+
+describe('cancel_viewing schema (lead)', () => {
+  it('accepts viewing_id with optional reason', () => {
+    assert.ok(cancelViewingSchema.safeParse({ viewing_id: 'v-abc', reason: 'Changed plans' }).success);
+  });
+
+  it('accepts viewing_id without reason', () => {
+    assert.ok(cancelViewingSchema.safeParse({ viewing_id: 'v-abc' }).success);
+  });
+
+  it('rejects missing viewing_id', () => {
+    assert.ok(!cancelViewingSchema.safeParse({ reason: 'test' }).success, 'viewing_id is required');
+  });
+
+  it('rejects reason over 300 chars', () => {
+    assert.ok(!cancelViewingSchema.safeParse({ viewing_id: 'v-abc', reason: 'x'.repeat(301) }).success);
+  });
+
+  it('accepts reason exactly at 300 chars (boundary)', () => {
+    assert.ok(cancelViewingSchema.safeParse({ viewing_id: 'v-abc', reason: 'x'.repeat(300) }).success);
+  });
+});
+
+// ── reschedule_viewing schema (lead) ───────────────────────────────────────────
+
+describe('reschedule_viewing schema (lead)', () => {
+  it('accepts viewing_id + new_slot_iso', () => {
+    assert.ok(rescheduleViewingSchema.safeParse({
+      viewing_id: 'v-abc',
+      new_slot_iso: '2026-06-20T08:00:00.000Z'
+    }).success);
+  });
+
+  it('rejects missing new_slot_iso', () => {
+    assert.ok(!rescheduleViewingSchema.safeParse({ viewing_id: 'v-abc' }).success, 'new_slot_iso is required');
+  });
+
+  it('rejects missing viewing_id', () => {
+    assert.ok(!rescheduleViewingSchema.safeParse({ new_slot_iso: '2026-06-20T08:00:00.000Z' }).success);
+  });
+
+  it('rejects empty object', () => {
+    assert.ok(!rescheduleViewingSchema.safeParse({}).success);
   });
 });
 

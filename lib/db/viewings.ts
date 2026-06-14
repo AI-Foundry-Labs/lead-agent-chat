@@ -86,6 +86,24 @@ export async function createBookedViewing(input: {
   return rowToViewing(r);
 }
 
+export async function listViewingsByLead(leadId: string): Promise<ViewingSlot[]> {
+  const rows = await db
+    .select()
+    .from(viewing_slots)
+    .where(eq(viewing_slots.lead_id, leadId))
+    .orderBy(desc(viewing_slots.created_at));
+  return rows.map(rowToViewing);
+}
+
+export async function listViewingsByConversation(conversationId: string): Promise<ViewingSlot[]> {
+  const rows = await db
+    .select()
+    .from(viewing_slots)
+    .where(eq(viewing_slots.conversation_id, conversationId))
+    .orderBy(desc(viewing_slots.created_at));
+  return rows.map(rowToViewing);
+}
+
 export async function listBookedViewings(agencyId: string): Promise<ViewingSlot[]> {
   const rows = await db
     .select()
@@ -118,6 +136,7 @@ export async function rescheduleViewing(
     .update(viewing_slots)
     .set({
       confirmed_slot: new Date(newSlotIso),
+      status: 'booked',
       ...(newCalendarEventId !== undefined ? { calendar_event_id: newCalendarEventId } : {})
     })
     .where(eq(viewing_slots.id, viewingId))

@@ -6,7 +6,9 @@ import {
   updateLead,
   updateConversation,
   findBookedSlot,
-  createBookedViewing
+  createBookedViewing,
+  listViewingsByConversation,
+  getViewingById
 } from '@/lib/db';
 import { getAvailableSlots, createCalendarEvent } from '@/lib/calendar';
 import { notifyAdmins, notifyAdminsInChat } from '@/lib/notify';
@@ -16,6 +18,7 @@ import { formatConversationForMemory } from '@/lib/agent/cross-thread-context';
 import { issueLeadTelegramLinkToken } from '@/lib/auth';
 import { buildLeadTelegramLinkInfo } from '@/lib/telegram/build-lead-telegram-link';
 import { telegramConfigured } from '@/lib/telegram';
+import { cancelViewingWithMemory, rescheduleViewingWithMemory } from '@/lib/agent/viewing-actions';
 import type { AgentContext } from './context';
 import { ensureLead } from './context';
 
@@ -298,6 +301,57 @@ export function buildLeadTools(ctx: AgentContext) {
       execute: async ({ summary }) => {
         await notifyAdmins(summary);
         return { ok: true };
+      }
+    }),
+
+    // ─── Viewing Management ─────────────────────────────────────────────────
+
+    get_lead_viewings: tool({
+      description: 'List all viewings booked in this conversation. Use when the visitor asks about their scheduled appointment.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        const viewings = await listViewingsByConversation(ctx.conversation.id);
+        return viewings.map((v) => ({
+          id: v.id,
+          listing_id: v.listing_id,
+          slot: v.confirmed_slot ? formatSlot(v.confirmed_slot.toISOString()) : null,
+          status: v.status,
+          contact_email: v.contact_email
+        }));
+      }
+    }),
+
+    cancel_viewing: tool({
+      description: 'Cancel a viewing booked in this conversation. Use only when the visitor explicitly requests cancellation.',
+      inputSchema: z.object({
+        viewing_id: z.string(),
+        reason: z.string().max(300).optional().describe('Reason for cancellation — stored in memory')
+      }),
+      execute: async ({ viewing_id, reason }) => {
+        // Ownership guard: only allow cancelling viewings from this conversation
+        const viewing = await getViewingById(viewing_id);
+        if (!viewing || viewing.conversation_id !== ctx.conversation.id) {
+          return { error: 'viewing_not_found' };
+        }
+        return cancelViewingWithMemory(viewing_id, ctx.config.calendar_id, reason);
+      }
+    }),
+
+    reschedule_viewing: tool({
+      description:
+        'Reschedule a viewing to a new slot. Call get_available_slots first to get valid iso values. ' +
+        'new_slot_iso MUST be the exact iso string from get_available_slots — never construct a timestamp manually.',
+      inputSchema: z.object({
+        viewing_id: z.string(),
+        new_slot_iso: z.string().describe('Exact iso from get_available_slots')
+      }),
+      execute: async ({ viewing_id, new_slot_iso }) => {
+        // Ownership guard: only allow rescheduling viewings from this conversation
+        const viewing = await getViewingById(viewing_id);
+        if (!viewing || viewing.conversation_id !== ctx.conversation.id) {
+          return { error: 'viewing_not_found' };
+        }
+        return rescheduleViewingWithMemory(viewing_id, new_slot_iso, ctx.config.calendar_id);
       }
     })
   };

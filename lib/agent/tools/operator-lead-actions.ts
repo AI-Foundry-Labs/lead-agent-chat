@@ -125,7 +125,7 @@ export function buildOperatorLeadActions(ctx: AgentContext, scopedLeadId: string
           .map((v) => ({
             id: v.id,
             listing_id: v.listing_id,
-            slot: v.confirmed_slot ? formatSlot(v.confirmed_slot.toString()) : null,
+            slot: v.confirmed_slot ? formatSlot(v.confirmed_slot.toISOString()) : null,
             status: v.status,
             calendar_event_id: v.calendar_event_id
           }));

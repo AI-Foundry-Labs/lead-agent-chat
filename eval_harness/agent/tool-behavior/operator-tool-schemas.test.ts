@@ -25,7 +25,7 @@ const operatorRecordQualificationSchema = z.object({
 
 const operatorRememberVisitorFactSchema = z.object({
   lead_id: z.string().optional(),
-  facts: z.array(z.string().max(500)).min(1).max(10)
+  facts: z.array(z.string().max(800)).min(1).max(20)
 });
 
 const cancelViewingSchema = z.object({
@@ -150,14 +150,28 @@ describe('remember_visitor_fact (operator)', () => {
     }).success);
   });
 
+  it('accepts facts without lead_id (scoped mode)', () => {
+    assert.ok(operatorRememberVisitorFactSchema.safeParse({ facts: ['Prefers ground floor'] }).success);
+  });
+
   it('rejects empty facts array', () => {
     assert.ok(!operatorRememberVisitorFactSchema.safeParse({ facts: [] }).success);
   });
 
-  it('rejects more than 10 facts', () => {
+  it('rejects more than 20 facts', () => {
     assert.ok(!operatorRememberVisitorFactSchema.safeParse({
-      facts: Array.from({ length: 11 }, (_, i) => `fact ${i}`)
+      facts: Array.from({ length: 21 }, (_, i) => `fact ${i}`)
     }).success);
+  });
+
+  it('accepts exactly 20 facts (boundary)', () => {
+    assert.ok(operatorRememberVisitorFactSchema.safeParse({
+      facts: Array.from({ length: 20 }, (_, i) => `fact ${i}`)
+    }).success);
+  });
+
+  it('rejects a fact over 800 chars', () => {
+    assert.ok(!operatorRememberVisitorFactSchema.safeParse({ facts: ['x'.repeat(801)] }).success);
   });
 });
 

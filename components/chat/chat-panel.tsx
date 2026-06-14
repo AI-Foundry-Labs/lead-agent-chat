@@ -9,12 +9,10 @@ import { addPendingConversationId } from '@/components/chat/pending-conversation
 import { useLang } from '@/components/lang-provider';
 import { formatSlot } from '@/lib/format';
 
-type ToolCall = { toolName?: string };
 type ChatMessage = {
   id: string;
   role: string;
   content: string;
-  tool_calls?: ToolCall[] | null;
 };
 type Snapshot = {
   mode: string | null;
@@ -165,11 +163,6 @@ export function ChatPanel({
           );
           return messages.map((m, i) => (
             <div key={m.id}>
-              {Array.isArray(m.tool_calls) && m.tool_calls.length > 0 && (
-                <p className="mb-1.5 text-center text-[11px] text-muted-foreground">
-                  {m.tool_calls.map((tc) => tc.toolName).filter(Boolean).join(', ')}
-                </p>
-              )}
               {m.content && <ChatBubble role={m.role} content={m.content} />}
               {viewing && i === lastAssistantIdx && (
                 <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
