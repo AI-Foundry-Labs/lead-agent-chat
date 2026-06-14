@@ -32,7 +32,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children
 }: Readonly<{ children: React.ReactNode }>) {
-  const lang = await getLang();
+  const lang = 'fr' as const;
 
   return (
     <html lang={lang}>

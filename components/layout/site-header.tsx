@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LangToggle } from '@/components/lang-toggle';
 import { LeadAuthNav } from '@/components/layout/lead-auth-nav';
 import { getDict, type Lang } from '@/lib/i18n';
 
@@ -33,7 +32,6 @@ export function SiteHeader({ lang }: { lang: Lang }) {
             {t.nav_listings}
           </Link>
           <LeadAuthNav />
-          <LangToggle />
         </nav>
       </div>
     </header>
