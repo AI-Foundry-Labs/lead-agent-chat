@@ -115,8 +115,12 @@ export function ChatPanel({
         setConversationId(data.conversationId);
         if (trackForClaim) addPendingConversationId(data.conversationId);
       }
-      // SSE stream delivers the final messages from DB — no need to append reply here.
-      // Adding it here too would duplicate the assistant message (race with broadcast).
+      // Treat the POST response as the authoritative final snapshot. SSE remains
+      // useful for updates from other channels, but can miss an event across
+      // reconnects or auth-cookie transitions after anonymous promotion.
+      if (data.messages) setMessages(data.messages);
+      if (data.conversation) setMode(data.conversation.mode ?? null);
+      if ('viewing' in data) setViewing(data.viewing ?? null);
       if (data.error) {
         setMessages((m) => [
           ...m,

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   createConversation,
   getConversation,
+  getLeadConversationByChannel,
   getListingById,
   getVisibleMessages,
   getActiveViewing,
@@ -39,14 +40,6 @@ const postSchema = z.object({
 export async function GET(req: NextRequest) {
   let id = req.nextUrl.searchParams.get('conversationId');
   const listingId = req.nextUrl.searchParams.get('listingId');
-
-  // No conversationId? Try to restore from guest cookie using listingId.
-  if (!id) {
-    if (!listingId) return Response.json({ error: 'conversationId required' }, { status: 400 });
-    id = await getGuestConvId(listingId);
-    if (!id) return Response.json({ conversation: null, messages: [], viewing: null });
-  }
-
   const leadId = await getLeadIdFromCookies();
   const agencyId =
     req.headers.get('x-agency-id') ??
@@ -54,6 +47,18 @@ export async function GET(req: NextRequest) {
   if (!agencyId) {
     return Response.json({ error: 'agency_not_configured' }, { status: 503 });
   }
+
+  // No conversationId? Try to restore from guest cookie using listingId.
+  if (!id) {
+    if (!listingId) return Response.json({ error: 'conversationId required' }, { status: 400 });
+    id = await getGuestConvId(listingId);
+    if (!id && leadId) {
+      const leadConversation = await getLeadConversationByChannel(leadId, listingId, 'web');
+      if (leadConversation?.agency_id === agencyId) id = leadConversation.id;
+    }
+    if (!id) return Response.json({ conversation: null, messages: [], viewing: null });
+  }
+
   let conversation;
   try {
     conversation = await assertLeadChatAccess(id, leadId, agencyId);
@@ -176,10 +181,37 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const [refreshed, messages, viewing] = await Promise.all([
+      getConversation(conv.id),
+      getVisibleMessages(conv.id),
+      getActiveViewing(conv.id)
+    ]);
+
     return Response.json({
       conversationId: conv.id,
       reply: result.reply,
-      status: result.status
+      status: result.status,
+      conversation: refreshed
+        ? {
+            id: refreshed.id,
+            mode: refreshed.mode,
+            listing_id: refreshed.listing_id,
+            lead_id: refreshed.lead_id
+          }
+        : null,
+      messages: messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        tool_calls: m.tool_calls
+      })),
+      viewing:
+        viewing && viewing.status === 'booked' && viewing.confirmed_slot
+          ? {
+              listing_id: viewing.listing_id,
+              slot: viewing.confirmed_slot.toISOString()
+            }
+          : null
     });
   } catch (e) {
     console.error('[chat] turn failed:', e);

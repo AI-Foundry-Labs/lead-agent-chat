@@ -247,26 +247,49 @@ async function seedListings(agencyId: string) {
   console.log('✓ 3 default listings created');
 }
 
-async function seedAdmin(agencyId: string) {
-  // Defaults for easy local login; override via env in production.
-  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@gmail.com';
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'admin123';
+async function ensureAdmin(input: {
+  agencyId: string;
+  email: string;
+  password: string;
+  name: string;
+  preferredLang?: string;
+}) {
   const existing = await db
     .select()
     .from(admins)
-    .where(eq(admins.email, adminEmail))
+    .where(eq(admins.email, input.email))
     .limit(1);
   if (existing[0]) {
-    console.log(`• Admin already present: ${adminEmail}`);
+    console.log(`• Admin already present: ${input.email}`);
     return;
   }
   await db.insert(admins).values({
-    agency_id: agencyId,
-    email: adminEmail,
-    password_hash: await hashPassword(adminPassword),
-    name: process.env.SEED_ADMIN_NAME ?? 'Admin'
+    agency_id: input.agencyId,
+    email: input.email,
+    password_hash: await hashPassword(input.password),
+    name: input.name,
+    preferred_lang: input.preferredLang ?? 'fr'
   });
-  console.log(`✓ Admin created: ${adminEmail}`);
+  console.log(`✓ Admin created: ${input.email}`);
+}
+
+async function seedAdmins(agencyId: string) {
+  // Defaults for easy local login; override primary admin via env in production.
+  await ensureAdmin({
+    agencyId,
+    email: process.env.SEED_ADMIN_EMAIL ?? 'admin@gmail.com',
+    password: process.env.SEED_ADMIN_PASSWORD ?? 'admin123',
+    name: process.env.SEED_ADMIN_NAME ?? 'Admin',
+    preferredLang: 'fr'
+  });
+
+  await ensureAdmin({
+    agencyId,
+    email: process.env.SEED_ADMIN_FR_EMAIL ?? 'admin_fr@gmail.com',
+    password: process.env.SEED_ADMIN_FR_PASSWORD ?? 'admin123',
+    name: process.env.SEED_ADMIN_FR_NAME ?? 'Admin FR',
+    preferredLang: 'fr'
+  });
 }
 
 async function main() {
@@ -274,7 +297,7 @@ async function main() {
   await seedConfig(agencyId);
   await seedRules(agencyId);
   await seedListings(agencyId);
-  await seedAdmin(agencyId);
+  await seedAdmins(agencyId);
   console.log('Seed complete.');
   process.exit(0);
 }
