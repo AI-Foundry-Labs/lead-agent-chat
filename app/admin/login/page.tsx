@@ -44,6 +44,10 @@ function LoginForm() {
     });
     setBusy(false);
     if (res.ok) {
+      const data = await res.json();
+      if (data.admin?.preferred_lang) {
+        document.cookie = `lang=${data.admin.preferred_lang};path=/;max-age=31536000`;
+      }
       router.push(next);
       router.refresh();
     } else {

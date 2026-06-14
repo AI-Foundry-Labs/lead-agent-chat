@@ -17,6 +17,8 @@ import { notifyAdminsInChat } from '@/lib/notify';
 import { notifyAgency } from '@/lib/telegram/notify-agency';
 import { matchRule } from '@/lib/agent/rules';
 import { reportHandoffBriefing } from '@/lib/agent/report-handoff-briefing';
+import { detectMessageLang } from '@/lib/agent/detect-lang';
+import { notif } from '@/lib/agent/notification-strings';
 import { buildLeadSystemPrompt } from '@/lib/agent/prompts';
 import { buildOperatorSystemPrompt } from '@/lib/agent/prompts/operator-prompts';
 import { buildCrossThreadContextBlock } from '@/lib/agent/cross-thread-context';
@@ -105,14 +107,18 @@ export async function runAgentTurn(
     }
   }
 
+  // Detect lead's actual message language (runs in background; defaults to 'fr').
+  // Used for admin notifications so they receive messages in the lead's language.
+  const detectedLang = actor.type === 'lead' && message.trim()
+    ? await detectMessageLang(message)
+    : lang;
+
+  const n = notif(detectedLang);
+
   // Takeover safety: a lead conversation in manual mode does not auto-reply.
   if (conversation.type === 'lead' && conversation.mode === 'manual') {
     agentLog.info('agent.manual_mode', { conversationId, messageLen: message.length });
-    const manualSummary =
-      `📩 Nouveau message client — mode conseiller / New lead message (advisor mode)\n\n` +
-      `« ${message.slice(0, 300)} »\n\n` +
-      `Répondez depuis l'interface web ou Topic 1.\n` +
-      `Reply from the web UI or Topic 1.`;
+    const manualSummary = n.manual(message.slice(0, 300));
     if (conversation.lead_id) {
       void notifyAgency(conversation.agency_id, conversation.lead_id, manualSummary);
     }
@@ -132,25 +138,19 @@ export async function runAgentTurn(
         agentLog.info('agent.handoff', { conversationId, rule: matched.description, leadId: conversation.lead_id });
         if (conversation.lead_id)
           await updateLead(conversation.lead_id, { status: 'handoff' });
-        const handoffSummary =
-          `🚨 Transfert / Handoff\n\nRègle déclenchée / Rule triggered: "${matched.description}"\n\n` +
-          `Message: « ${message.slice(0, 160)} »\n\n` +
-          `Le prospect attend une réponse humaine.\n` +
-          `The lead is waiting for a human reply.`;
+        const handoffSummary = n.handoff(matched.description, message.slice(0, 160));
         if (conversation.lead_id) {
           void notifyAgency(conversation.agency_id, conversation.lead_id, handoffSummary);
         }
         // Lead reports up: generate a briefing from this lead's own context and post it
         // into the admin's main_assistant panel (fire-and-forget — no separate operator agent).
-        const triggerMsg = message;
-        const ruleName = matched.description;
-        void reportHandoffBriefing({ lead, triggerMessage: triggerMsg, ruleName, lang });
+        void reportHandoffBriefing({ lead, triggerMessage: message, ruleName: matched.description, lang });
       }
       // Fall through — agent continues responding normally.
     }
   }
 
-  const ctx: AgentContext = { conversation, config };
+  const ctx: AgentContext = { conversation, config, lang: detectedLang };
 
   let system: string;
   let tools;

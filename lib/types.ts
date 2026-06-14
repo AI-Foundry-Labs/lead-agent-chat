@@ -59,6 +59,7 @@ export interface Lead {
   potential_status: PotentialStatus | null;
   score_reason: string | null;
   long_term_memory: string | null;
+  persona: string | null;
   telegram_user_id: string | null;
   created_at: Date;
   updated_at: Date;

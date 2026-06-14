@@ -63,6 +63,6 @@ export async function POST(request: Request) {
 
   return Response.json({
     ok: true,
-    admin: { id: admin.id, email: admin.email, name: admin.name }
+    admin: { id: admin.id, email: admin.email, name: admin.name, preferred_lang: admin.preferred_lang }
   });
 }

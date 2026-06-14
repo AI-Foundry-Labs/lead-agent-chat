@@ -32,7 +32,8 @@ export async function GET(req: NextRequest) {
         potential: lead.potential_status,
         reason: lead.score_reason,
         qual_values: lead.qual_values,
-        long_term_memory: lead.long_term_memory
+        long_term_memory: lead.long_term_memory,
+        persona: lead.persona
       },
       conversation_id: conv?.id ?? null,
       mode: conv?.mode ?? null,
