@@ -10,11 +10,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildLeadDisplayName,
-  buildConversationTopicTitle
+  buildConversationTopicTitle,
+  buildAssistantTopicTitle
 } from '../../lib/telegram/lead-topics';
-
-// Mirror of the marker's emoji map (kept in sync intentionally).
-const STATUS_EMOJI = { hot: '🔥', warm: '🟡', cold: '❄️' } as const;
+import { STATUS_EMOJI } from '../../lib/telegram/sync-lead-topic-titles';
 
 function markerTitle(
   status: keyof typeof STATUS_EMOJI,
@@ -58,5 +57,32 @@ describe('status marker title', () => {
 
   it('omits listing when absent', () => {
     assert.equal(markerTitle('cold', 'John', null, null), '❄️ 💬 John');
+  });
+
+  it('applies the same status emoji to the assistant topic title', () => {
+    const name = buildLeadDisplayName('Marie D.', null);
+    assert.equal(
+      `${STATUS_EMOJI.hot} ${buildAssistantTopicTitle(name)}`,
+      '🔥 🤖 Marie D. — Assistant'
+    );
+  });
+});
+
+describe('both topic titles share the same display name', () => {
+  // Regression: a lead promoted anonymously (Visiteur #N) who later gives a real
+  // name must show that name on BOTH topics — only the Assistant topic adds the
+  // "— Assistant" suffix; neither carries a stale "Visiteur #N".
+  it('uses the real name on conversation + assistant once known', () => {
+    const name = buildLeadDisplayName('Dung', null, 3); // real name wins over anon_seq
+    assert.equal(name, 'Dung');
+    assert.equal(buildConversationTopicTitle(name, 'Maison Vincennes'), '💬 Dung — Maison Vincennes');
+    assert.equal(buildAssistantTopicTitle(name), '🤖 Dung — Assistant');
+  });
+
+  it('falls back to the same Visiteur #N on both while still anonymous', () => {
+    const name = buildLeadDisplayName(null, null, 3);
+    assert.equal(name, 'Visiteur #3');
+    assert.equal(buildConversationTopicTitle(name, 'Maison Vincennes'), '💬 Visiteur #3 — Maison Vincennes');
+    assert.equal(buildAssistantTopicTitle(name), '🤖 Visiteur #3 — Assistant');
   });
 });

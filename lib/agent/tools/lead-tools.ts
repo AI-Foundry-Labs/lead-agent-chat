@@ -20,6 +20,7 @@ import { buildLeadTelegramLinkInfo } from '@/lib/telegram/build-lead-telegram-li
 import { telegramConfigured } from '@/lib/telegram';
 import { cancelViewingWithMemory, rescheduleViewingWithMemory } from '@/lib/agent/viewing-actions';
 import { syncLeadStatusToTelegram } from '@/lib/telegram/lead-status-marker';
+import { syncLeadTopicTitles } from '@/lib/telegram/sync-lead-topic-titles';
 import { notif } from '@/lib/agent/notification-strings';
 import type { AgentContext } from './context';
 import { ensureLead } from './context';
@@ -202,6 +203,12 @@ export function buildLeadTools(ctx: AgentContext) {
           name: contact_name ?? lead.name,
           status: 'booked'
         });
+        // A real name may now be known — re-sync both topic titles (off-path, guarded).
+        if (contact_name && contact_name !== lead.name) {
+          void syncLeadTopicTitles(ctx.config.agency_id, lead.id).catch((e) =>
+            console.error('[lead-tools] syncLeadTopicTitles failed:', e)
+          );
+        }
         const n = notif(ctx.lang);
         const contact = contact_name ?? lead.name ?? email;
         await notifyAdmins(n.viewing_booked_label(listing.title, formatSlot(slot_iso), contact));
