@@ -12,7 +12,10 @@ sql\`SELECT 1\`.then(() => { return sql.end(); }).catch(e => { process.exit(1); 
 done
 echo "  db ready"
 
-if [ "${RUN_DB_PUSH:-true}" = "true" ]; then
+if [ "${RUN_DB_MIGRATE:-false}" = "true" ]; then
+  echo "Running db:migrate..."
+  (cd /migrate && ./node_modules/.bin/tsx scripts/migrate.ts) || echo "  db:migrate failed (continuing)"
+elif [ "${RUN_DB_PUSH:-true}" = "true" ]; then
   echo "Running drizzle-kit push..."
   (cd /migrate && ./node_modules/.bin/drizzle-kit push --force) || echo "  drizzle-kit push failed (continuing)"
 fi

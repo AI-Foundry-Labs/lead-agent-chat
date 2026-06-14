@@ -21,9 +21,11 @@ import {
 
 export const ADMIN_COOKIE = 'admin_session';
 export const LEAD_COOKIE = 'lead_session';
+export const GUEST_CONV_COOKIE = 'guest_convs';
 
 const ADMIN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LEAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const GUEST_CONV_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAGIC_TTL_MS = 15 * 60 * 1000;
 const TELEGRAM_LINK_TTL_MS = 10 * 60 * 1000;
 const LEAD_TELEGRAM_LINK_TTL_MS = 24 * 60 * 60 * 1000;
@@ -138,6 +140,46 @@ export async function getLeadIdFromCookies(): Promise<string | null> {
     )
     .limit(1);
   return rows[0]?.lead_id ?? null;
+}
+
+// ─── Guest conversation cookie (anonymous visitors) ────────────────────────
+// Stores a JSON map {listingId|"_": conversationId} so guests can resume
+// their conversations after a page refresh without logging in.
+// Cleared when the visitor is promoted to a named lead (setLeadCookie called).
+
+async function getGuestConvMap(): Promise<Record<string, string>> {
+  const jar = await cookies();
+  const raw = jar.get(GUEST_CONV_COOKIE)?.value;
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch { return {}; }
+}
+
+export async function setGuestConvCookie(
+  conversationId: string,
+  listingId: string | null
+): Promise<void> {
+  const key = listingId ?? '_';
+  const map = await getGuestConvMap();
+  map[key] = conversationId;
+  const jar = await cookies();
+  jar.set(GUEST_CONV_COOKIE, JSON.stringify(map), {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: GUEST_CONV_TTL_MS / 1000
+  });
+}
+
+export async function getGuestConvId(listingId: string | null): Promise<string | null> {
+  const key = listingId ?? '_';
+  const map = await getGuestConvMap();
+  return map[key] ?? null;
+}
+
+export async function clearGuestConvCookie(): Promise<void> {
+  const jar = await cookies();
+  jar.delete(GUEST_CONV_COOKIE);
 }
 
 export async function destroyLeadSession(): Promise<void> {
