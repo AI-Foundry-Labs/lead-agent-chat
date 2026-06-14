@@ -28,7 +28,8 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://lead_agent:lead_agent_dev@db:5432/lead_agent
-      RUN_DB_PUSH: "true"
+      RUN_DB_PUSH: "false"
+      RUN_DB_MIGRATE: "true"
       RUN_DB_SEED: "true"
       NEXT_TELEMETRY_DISABLED: "1"
     volumes:
