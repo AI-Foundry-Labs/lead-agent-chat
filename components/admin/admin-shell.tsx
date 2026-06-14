@@ -14,6 +14,7 @@ import { AssistantPanel } from '@/components/admin/assistant-panel';
 import type { AdminData } from '@/components/admin/admin-types';
 
 type Tab = 'agents' | 'dashboard' | 'conversations' | 'listings' | 'config' | 'assistant';
+type LinkInfo = { deepLink: string | null; command: string };
 
 export function AdminShell() {
   const { t } = useLang();
@@ -22,6 +23,7 @@ export function AdminShell() {
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [linkInfo, setLinkInfo] = useState<LinkInfo | null>(null);
 
   const refetch = useCallback(async () => {
     setLoading(true);
@@ -77,6 +79,14 @@ export function AdminShell() {
     router.refresh();
   }
 
+  // Telegram group linking — lives in the header so it's reachable from any tab.
+  async function linkTelegram() {
+    if (linkInfo) { setLinkInfo(null); return; }
+    const res = await fetch('/api/admin/link-telegram', { method: 'POST' });
+    const d = await res.json();
+    setLinkInfo({ deepLink: d.deep_link ?? null, command: d.command ?? '' });
+  }
+
   const tabs: { key: Tab; label: string }[] = [
     { key: 'agents', label: t.tab_agents },
     { key: 'dashboard', label: t.tab_dashboard },
@@ -90,10 +100,31 @@ export function AdminShell() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <AdminTabNav tabs={tabs} active={tab} onChange={setTab} />
-        <Button variant="outline" size="sm" onClick={() => void logout()}>
-          {t.logout}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => void linkTelegram()}>
+            {t.link_telegram}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void logout()}>
+            {t.logout}
+          </Button>
+        </div>
       </div>
+
+      {linkInfo && (
+        <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
+          {linkInfo.deepLink && (
+            <a
+              href={linkInfo.deepLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-blue-600 underline hover:text-blue-800"
+            >
+              Open Telegram →
+            </a>
+          )}
+          <span>{t.link_info} <code>{linkInfo.command}</code></span>
+        </div>
+      )}
 
       {error && (
         <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
