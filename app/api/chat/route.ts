@@ -8,6 +8,7 @@ import {
   getActiveViewing,
   updateConversation
 } from '@/lib/db';
+import { promoteAnonymousVisitor } from '@/lib/telegram/promote-anonymous-visitor';
 import {
   getLeadIdFromCookies,
   setLeadCookie,
@@ -147,9 +148,30 @@ export async function POST(req: NextRequest) {
     // conversation and set the lead cookie so subsequent requests aren't 403'd.
     if (!leadId) {
       const refreshed = await getConversation(conv.id);
-      if (refreshed?.lead_id) {
+      let promotedLeadId = refreshed?.lead_id ?? null;
+
+      // Still anonymous after the turn (visitor only asked questions, no tool ran)?
+      // Promote to an anonymous lead once a minimal-signal threshold is reached so
+      // the agency can see this conversation in Telegram. Off-the-happy-path here is
+      // fine; promotion is guarded and provisions forum topics best-effort.
+      if (refreshed && !refreshed.lead_id) {
+        const visible = await getVisibleMessages(conv.id);
+        const userMsgCount = visible.filter((m) => m.role === 'user').length;
+        if (userMsgCount >= 2) {
+          const promoted = await promoteAnonymousVisitor(refreshed, agencyId, {
+            language: lang,
+            knownMessages: visible
+          }).catch((e) => {
+            console.error('[chat] promoteAnonymousVisitor failed — non-fatal:', e);
+            return null;
+          });
+          promotedLeadId = promoted?.id ?? null;
+        }
+      }
+
+      if (promotedLeadId) {
         // Visitor promoted to lead: set persistent session, clear anonymous guest cookie.
-        await setLeadCookie(refreshed.lead_id);
+        await setLeadCookie(promotedLeadId);
         await clearGuestConvCookie();
       }
     }

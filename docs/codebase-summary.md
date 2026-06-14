@@ -68,7 +68,7 @@ env.example                      # Set TELEGRAM_WEBHOOK_SECRET, DATABASE_URL, et
 
 | File | Purpose |
 |------|---------|
-| `lib/db/agencies.ts` | Agency table queries, listing/rule scoping by agency. |
+| `lib/db/agencies.ts` | Agency table queries, listing/rule scoping by agency. Includes `incrementAnonSeq`. |
 | `lib/agency-context.ts` | Host header → agency resolver; handles IPv6 dev hosts. |
 | `lib/db/agency-telegram-links.ts` | Token generation, group binding (`telegram_group_chat_id`). |
 | `lib/db/lead-telegram-topics.ts` | Map lead → (conversation_topic_id, assistant_topic_id). |
@@ -78,7 +78,8 @@ env.example                      # Set TELEGRAM_WEBHOOK_SECRET, DATABASE_URL, et
 | `lib/telegram/notify-agency.ts` | Handoff/event notifications to agency group. |
 | `lib/telegram/verify-agency-group.ts` | Check update is from a registered agency group. |
 | `lib/telegram/resolve-agency-admin.ts` | Sender (telegram_user_id) → admin lookup. |
-| `lib/telegram/lead-topics.ts` | Create/fetch per-lead forum topics. |
+| `lib/telegram/lead-topics.ts` | Create/fetch per-lead forum topics. Includes `buildLeadDisplayName` with optional `anonSeq`. |
+| `lib/telegram/promote-anonymous-visitor.ts` | Promote anonymous leads: increment counter, attach lead, backfill Telegram topic. |
 | `scripts/migrate-add-agency.ts` | Migration: add `agencies` table + `agency_id` FK + backfill. |
 | `middleware.ts` (modified) | Set `x-agency-id` header (server-resolved, client-supplied stripped). |
 
@@ -90,6 +91,7 @@ agencies
   name TEXT
   telegram_group_chat_id BIGINT (nullable, until /link)
   config_json JSONB (criteria, etc.)
+  anon_seq_counter INT (default 0) ← Per-agency counter for anonymous visitor sequencing
 
 conversations
   id UUID PK
@@ -104,6 +106,7 @@ leads
   agency_id UUID FK → agencies (NEW)
   listing_id UUID FK → listings
   email TEXT
+  anon_seq INT (nullable) ← Sequence number for anonymous-promoted leads
 
 listings
   id UUID PK

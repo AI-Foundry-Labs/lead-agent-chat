@@ -61,6 +61,7 @@ export interface Lead {
   long_term_memory: string | null;
   persona: string | null;
   telegram_user_id: string | null;
+  anon_seq: number | null;
   created_at: Date;
   updated_at: Date;
 }

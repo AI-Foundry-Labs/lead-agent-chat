@@ -25,6 +25,7 @@ function rowToLead(r: typeof leads.$inferSelect): Lead {
     long_term_memory: r.long_term_memory,
     persona: r.persona ?? null,
     telegram_user_id: r.telegram_user_id,
+    anon_seq: r.anon_seq ?? null,
     created_at: r.created_at,
     updated_at: r.updated_at
   };
@@ -85,6 +86,7 @@ export async function createLead(input: {
   listing_id?: string | null;
   language?: Language;
   qual_values?: Record<string, string>;
+  anon_seq?: number | null;
 }): Promise<Lead> {
   const [r] = await db
     .insert(leads)
@@ -95,7 +97,8 @@ export async function createLead(input: {
       name: input.name ?? null,
       listing_id: input.listing_id ?? null,
       language: input.language ?? 'fr',
-      qual_values: input.qual_values ?? {}
+      qual_values: input.qual_values ?? {},
+      anon_seq: input.anon_seq ?? null
     })
     .returning();
   return rowToLead(r);
@@ -123,4 +126,12 @@ export async function updateLead(
     .where(eq(leads.id, id))
     .returning();
   return rowToLead(r);
+}
+
+/**
+ * Hard-delete a lead row. Used to clean up an orphan lead created when an
+ * anonymous-visitor promotion loses the attach race (see promote-anonymous-visitor).
+ */
+export async function deleteLead(id: string): Promise<void> {
+  await db.delete(leads).where(eq(leads.id, id));
 }

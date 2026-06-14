@@ -78,6 +78,38 @@ describe('buildLeadDisplayName', () => {
     });
   });
 
+  describe('anonymous sequence number fallback', () => {
+    it('uses "Visiteur #N" when only anonSeq is provided', () => {
+      const result = buildLeadDisplayName(null, null, 18);
+      assert.equal(result, 'Visiteur #18');
+    });
+
+    it('uses anonSeq when name and email are empty/invalid', () => {
+      const result = buildLeadDisplayName('  ', 'notanemail', 3);
+      assert.equal(result, 'Visiteur #3');
+    });
+
+    it('name takes precedence over anonSeq', () => {
+      const result = buildLeadDisplayName('Alice', null, 7);
+      assert.equal(result, 'Alice');
+    });
+
+    it('email local-part takes precedence over anonSeq', () => {
+      const result = buildLeadDisplayName(null, 'bob@example.com', 7);
+      assert.equal(result, 'bob');
+    });
+
+    it('falls back to plain Visiteur when anonSeq is null/undefined', () => {
+      assert.equal(buildLeadDisplayName(null, null, null), 'Visiteur');
+      assert.equal(buildLeadDisplayName(null, null, undefined), 'Visiteur');
+    });
+
+    it('handles anonSeq of 0 (treated as a valid sequence)', () => {
+      const result = buildLeadDisplayName(null, null, 0);
+      assert.equal(result, 'Visiteur #0');
+    });
+  });
+
   describe('fallback chain precedence', () => {
     it('name takes precedence over email', () => {
       const result = buildLeadDisplayName('John', 'jane@example.com');

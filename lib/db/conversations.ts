@@ -288,6 +288,24 @@ export async function getConversationByIdForLead(
   return conv;
 }
 
+/**
+ * Atomically attach a lead to a conversation ONLY if it's still anonymous.
+ * Returns the updated conversation if this call won the race, or null if the
+ * conversation already had a lead_id (a concurrent turn attached one first).
+ * Single conditional UPDATE → closes the promote-anonymous-visitor TOCTOU window.
+ */
+export async function attachLeadIfAnonymous(
+  conversationId: string,
+  leadId: string
+): Promise<Conversation | null> {
+  const [r] = await db
+    .update(conversations)
+    .set({ lead_id: leadId, updated_at: new Date() })
+    .where(and(eq(conversations.id, conversationId), isNull(conversations.lead_id)))
+    .returning();
+  return r ? rowToConversation(r) : null;
+}
+
 export async function updateConversation(
   id: string,
   patch: Partial<{

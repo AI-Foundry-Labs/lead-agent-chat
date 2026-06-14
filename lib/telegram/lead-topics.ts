@@ -34,15 +34,18 @@ import { createForumTopic } from '@/lib/telegram';
 // ─── Title builders ───────────────────────────────────────────────────────────
 
 /**
- * Display name for a lead — falls back to email local-part then "Visiteur".
+ * Display name for a lead — falls back to email local-part, then a sequence-numbered
+ * "Visiteur #N" for anonymous visitors, then plain "Visiteur".
  * Keep short for topic title readability.
  */
 export function buildLeadDisplayName(
   name: string | null | undefined,
-  email: string | null | undefined
+  email: string | null | undefined,
+  anonSeq?: number | null
 ): string {
   if (name && name.trim()) return name.trim();
   if (email && email.includes('@')) return email.split('@')[0];
+  if (anonSeq != null) return `Visiteur #${anonSeq}`;
   return 'Visiteur';
 }
 
@@ -97,7 +100,7 @@ export async function getOrCreateLeadTopics(
   }
 
   const listing = lead.listing_id ? await getListing(lead.listing_id) : null;
-  const displayName = buildLeadDisplayName(lead.name, lead.email);
+  const displayName = buildLeadDisplayName(lead.name, lead.email, lead.anon_seq);
   const convTitle = buildConversationTopicTitle(displayName, listing?.title);
   const asstTitle = buildAssistantTopicTitle(displayName);
 

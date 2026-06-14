@@ -43,6 +43,10 @@ export const agencies = pgTable('agencies', {
   // Phase 01 (master topic): message_thread_id of the 🛠 Master forum topic.
   // Null until the group is linked and the topic is created.
   telegram_master_topic_id: integer('telegram_master_topic_id'),
+  // Per-agency counter for anonymous (not-logged-in) visitor sequence numbers.
+  // Incremented atomically when an anonymous visitor is promoted to a lead so
+  // their Telegram topic gets a readable label (e.g. "Visiteur #18").
+  anon_seq_counter: integer('anon_seq_counter').default(0).notNull(),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull()
 });
 
@@ -127,6 +131,9 @@ export const leads = pgTable(
     persona: text('persona'),
     // Set when the visitor links Telegram via /start <token> from the site.
     telegram_user_id: varchar('telegram_user_id', { length: 50 }),
+    // Per-agency sequence number assigned when an anonymous visitor is promoted
+    // to a lead (for readable Telegram topic titles). Null for identified leads.
+    anon_seq: integer('anon_seq'),
     created_at: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),

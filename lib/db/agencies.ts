@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db, agencies } from './client';
 
 export type Agency = {
@@ -64,6 +64,19 @@ export async function getDefaultAgency(): Promise<Agency | null> {
     .orderBy(agencies.created_at)
     .limit(1);
   return rows[0] ? rowToAgency(rows[0]) : null;
+}
+
+/**
+ * Atomically bump the agency's anonymous-visitor counter and return the new value.
+ * Single SQL statement → safe under concurrent visitor promotions (no read-modify-write race).
+ */
+export async function incrementAnonSeq(agencyId: string): Promise<number> {
+  const [r] = await db
+    .update(agencies)
+    .set({ anon_seq_counter: sql`${agencies.anon_seq_counter} + 1` })
+    .where(eq(agencies.id, agencyId))
+    .returning({ seq: agencies.anon_seq_counter });
+  return r?.seq ?? 0;
 }
 
 export async function createAgency(input: {

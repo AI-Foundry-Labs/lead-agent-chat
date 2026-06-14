@@ -2,6 +2,38 @@
 
 All notable changes to lead-agent-chat are documented here.
 
+## [2026-06-14] Anonymous Visitor Promotion to Leads
+
+### Features
+
+- **Anonymous lead sequencing:** Visitors with ≥2 messages are promoted to anonymous leads with per-agency sequence number (`Visiteur #N`).
+- **Telegram topic provisioning:** Promotion triggers creation of per-lead forum topics (💬 Conversation, 🤖 Assistant) with backfilled prior messages + context header.
+- **Race-safe promotion:** Conditional attach logic in `promoteAnonymousVisitor` prevents duplicate provisioning.
+
+### New Files
+
+- `lib/telegram/promote-anonymous-visitor.ts` — `promoteAnonymousVisitor` (race-safe via conditional attach).
+
+### Schema Changes
+
+- `agencies.anon_seq_counter` (int, default 0) — Per-agency anonymous visitor counter.
+- `leads.anon_seq` (int, nullable) — Sequence number for anonymous-promoted leads; null for identified leads.
+
+### Modified Files
+
+- `lib/db/agencies.ts` — `incrementAnonSeq` helper.
+- `lib/db/conversations.ts` — `attachLeadIfAnonymous` for race-safe attachment.
+- `lib/db/leads.ts` — `deleteLead`, `createLead` now accept `anon_seq` and `language` params.
+- `lib/telegram/lead-topics.ts` — `buildLeadDisplayName` takes optional `anonSeq`.
+- `app/api/chat/route.ts` — Promotion trigger on ≥2 user messages.
+
+### Test Coverage
+
+- `npm run typecheck` — PASS.
+- `npm run test` — All tests passing.
+
+---
+
 ## [2026-06-13] Multi-Tenant + Agency-Scoped Telegram
 
 ### Major Features
