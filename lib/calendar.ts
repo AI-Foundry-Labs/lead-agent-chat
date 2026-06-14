@@ -43,15 +43,22 @@ function parisUtcOffset(d: Date): number {
 
 function* candidateSlots(start: Date, daysAhead: number) {
   // Generate 9:00, 11:00, 14:00, 16:00 slots Paris-time on each weekday.
+  // Yield ISO strings with explicit Paris UTC offset (e.g. +02:00) so the
+  // wall-clock hour in the ISO matches the label shown to the LLM — this
+  // prevents the model from reconstructing a wrong UTC ISO when booking.
   const hours = [9, 11, 14, 16];
+  const parisFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  });
   for (let day = 1; day <= daysAhead; day++) {
     const d = new Date(start.getTime() + day * 24 * 60 * 60 * 1000);
     if (!isWeekday(d)) continue;
-    const offset = parisUtcOffset(d); // e.g. 2 for CEST, 1 for CET
+    const offset = parisUtcOffset(d); // 2 for CEST, 1 for CET
+    const dateStr = parisFmt.format(d); // Paris-local YYYY-MM-DD
+    const offsetStr = `+${String(offset).padStart(2, '0')}:00`;
     for (const h of hours) {
-      const slot = new Date(d);
-      slot.setUTCHours(h - offset, 0, 0, 0);
-      yield slot;
+      yield `${dateStr}T${String(h).padStart(2, '0')}:00:00${offsetStr}`;
     }
   }
 }
@@ -68,7 +75,7 @@ export async function getAvailableSlots(args: {
   if (!auth) {
     const out: string[] = [];
     for (const s of candidateSlots(new Date(), horizonDays)) {
-      out.push(s.toISOString());
+      out.push(s);
       if (out.length >= args.count) break;
     }
     return out;
@@ -92,14 +99,15 @@ export async function getAvailableSlots(args: {
 
   const out: string[] = [];
   for (const s of candidateSlots(now, horizonDays)) {
-    const end = new Date(s.getTime() + 60 * 60 * 1000);
+    const slotDate = new Date(s);
+    const end = new Date(slotDate.getTime() + 60 * 60 * 1000);
     const overlaps = busy.some((b) => {
       const bs = new Date(b.start!);
       const be = new Date(b.end!);
-      return s < be && end > bs;
+      return slotDate < be && end > bs;
     });
     if (!overlaps) {
-      out.push(s.toISOString());
+      out.push(s);
       if (out.length >= args.count) break;
     }
   }
