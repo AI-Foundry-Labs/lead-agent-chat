@@ -19,19 +19,23 @@ import {
   updateListing,
   deleteListing,
   listBookedViewings,
+  listViewingsByLead,
   getOrCreateLeadOperator,
   listConversationsByLeadId,
   listHandoffRules,
   createHandoffRule,
   toggleHandoffRule,
   deleteHandoffRule,
+  findBookedSlot,
+  createBookedViewing,
+  getViewingById,
   db,
   messages,
   leads,
   conversations
 } from '@/lib/db';
+import { createCalendarEvent, getAvailableSlots } from '@/lib/calendar';
 import { sendTelegramMessage } from '@/lib/telegram';
-import { getAvailableSlots } from '@/lib/calendar';
 import { dispatchReply } from '@/lib/dispatch';
 import { broadcastConversationUpdate, broadcastAgencyDataChanged } from '@/lib/events';
 import { notifyAdmins } from '@/lib/notify';
@@ -205,16 +209,15 @@ export function buildMainAssistantTools(
     }),
 
     get_lead_viewings: tool({
-      description: 'List all viewings for a specific lead.',
+      description: 'List all viewings (all statuses) for a specific lead.',
       inputSchema: z.object({ lead_id: z.string() }),
       execute: async ({ lead_id }) => {
-        const all = await listBookedViewings(ctx.config.agency_id);
-        const filtered = all.filter((v) => v.lead_id === lead_id);
-        return filtered.map((v) => ({
+        const viewings = await listViewingsByLead(lead_id);
+        return viewings.map((v) => ({
           id: v.id,
           listing_id: v.listing_id,
           contact_email: v.contact_email,
-          slot: v.confirmed_slot ? formatSlot(v.confirmed_slot.toString()) : null,
+          slot: v.confirmed_slot ? formatSlot(v.confirmed_slot.toISOString()) : null,
           status: v.status,
           calendar_event_id: v.calendar_event_id
         }));
@@ -431,15 +434,21 @@ export function buildMainAssistantTools(
         viewing_id: z.string(),
         reason: z.string().max(300).optional().describe('Reason for cancellation — stored in lead memory')
       }),
-      execute: async ({ viewing_id, reason }) =>
-        cancelViewingWithMemory(viewing_id, ctx.config.calendar_id, reason)
+      execute: async ({ viewing_id, reason }) => {
+        const v = await getViewingById(viewing_id);
+        if (!v || v.agency_id !== ctx.config.agency_id) return { error: 'viewing_not_found' };
+        return cancelViewingWithMemory(viewing_id, ctx.config.calendar_id, reason);
+      }
     }),
 
     reschedule_viewing: tool({
       description: 'Reschedule a booked viewing to a new slot. Use list_available_slots first.',
       inputSchema: z.object({ viewing_id: z.string(), new_slot_iso: z.string() }),
-      execute: async ({ viewing_id, new_slot_iso }) =>
-        rescheduleViewingWithMemory(viewing_id, new_slot_iso, ctx.config.calendar_id)
+      execute: async ({ viewing_id, new_slot_iso }) => {
+        const v = await getViewingById(viewing_id);
+        if (!v || v.agency_id !== ctx.config.agency_id) return { error: 'viewing_not_found' };
+        return rescheduleViewingWithMemory(viewing_id, new_slot_iso, ctx.config.calendar_id);
+      }
     }),
 
     list_available_slots: tool({
@@ -744,6 +753,111 @@ export function buildMainAssistantTools(
       execute: async ({ summary }) => {
         await notifyAdmins(summary);
         return { ok: true };
+      }
+    }),
+
+    // ─── Lead Deep Actions (mirror lead-agent capabilities for admin use) ───
+
+    record_qualification: tool({
+      description:
+        'Update qualification values and potential for a specific lead. ' +
+        'Use when admin learns new info about a lead (phone call, email, meeting) that was not captured in chat.',
+      inputSchema: z.object({
+        lead_id: z.string(),
+        values: z.record(z.string(), z.string()).describe('criterionKey → value, e.g. { budget: "800k€" }'),
+        potential_status: z.enum(['hot', 'warm', 'cold']),
+        reason: z.string().max(200)
+      }),
+      execute: async ({ lead_id, values, potential_status, reason }) => {
+        const lead = await getLeadById(lead_id);
+        if (!lead) return { error: 'lead_not_found' };
+        const merged = { ...lead.qual_values, ...values };
+        const allKeys = ctx.config.qualification_criteria.map((c) => c.key);
+        const complete = allKeys.every((k) => merged[k]);
+        const updated = await updateLead(lead_id, {
+          qual_values: merged,
+          potential_status,
+          score_reason: reason,
+          status: complete && lead.status === 'active' ? 'qualified' : lead.status
+        });
+        const factLines = Object.entries(values).map(([k, v]) => {
+          const label = ctx.config.qualification_criteria.find((c) => c.key === k)?.label ?? k;
+          return `${label}: ${v}`;
+        });
+        scheduleAppendLeadLongTermFacts(lead_id, [...factLines, `potential: ${potential_status}`], reason);
+        return { ok: true, qual_values: updated.qual_values, potential_status, all_criteria_collected: complete };
+      }
+    }),
+
+    book_viewing: tool({
+      description:
+        'Book a viewing on behalf of a lead (admin-initiated). ' +
+        'Use list_available_slots first to get valid slot_iso values. ' +
+        'slot_iso MUST be the exact iso string from list_available_slots.',
+      inputSchema: z.object({
+        lead_id: z.string(),
+        listing_id: z.string().optional().describe("Defaults to the lead's conversation listing"),
+        slot_iso: z.string().describe('Exact iso from list_available_slots'),
+        contact_email: z.string().email().optional().describe("Defaults to lead's email"),
+        contact_name: z.string().optional()
+      }),
+      execute: async ({ lead_id, listing_id, slot_iso, contact_email, contact_name }) => {
+        const lead = await getLeadById(lead_id);
+        if (!lead) return { error: 'lead_not_found' };
+        const conv = await getConversationByLeadId(lead_id);
+        if (!conv) return { error: 'conversation_not_found' };
+        const lid = listing_id ?? conv.listing_id;
+        if (!lid) return { error: 'no_listing' };
+        const listing = await getListing(lid);
+        if (!listing) return { error: 'listing_not_found' };
+        const email = contact_email ?? lead.email;
+        if (!email) return { error: 'need_contact_email' };
+
+        // Idempotency: don't double-book the same slot for this conversation
+        const existing = await findBookedSlot(conv.id, slot_iso);
+        if (existing) return { ok: true, already_booked: true, slot: formatSlot(slot_iso) };
+
+        const eventId = await createCalendarEvent({
+          calendarId: listing.agent_calendar_id || ctx.config.calendar_id,
+          slotIso: slot_iso,
+          contactEmail: email,
+          contactName: contact_name ?? lead.name,
+          listing
+        });
+        await createBookedViewing({
+          agency_id: ctx.config.agency_id,
+          conversation_id: conv.id,
+          lead_id,
+          listing_id: lid,
+          contact_email: email,
+          confirmed_slot: slot_iso,
+          calendar_event_id: eventId,
+          summary: `Viewing booked by admin for ${listing.title}`
+        });
+        await updateLead(lead_id, { email, name: contact_name ?? lead.name ?? undefined, status: 'booked' });
+        scheduleAppendLeadLongTermFacts(lead_id, [
+          `viewing booked (by admin): ${listing.title} on ${formatSlot(slot_iso)}`,
+          `contact: ${contact_name ?? lead.name ?? '—'} <${email}>`
+        ]);
+        return { ok: true, slot: formatSlot(slot_iso), listing: listing.title, address: listing.address };
+      }
+    }),
+
+    remember_visitor_fact: tool({
+      description:
+        'Append durable facts to a lead\'s long-term memory. ' +
+        'Use when admin learns info outside chat (phone call, email, in-person meeting).',
+      inputSchema: z.object({
+        lead_id: z.string(),
+        facts: z.array(z.string().max(800)).min(1).max(20).describe('Factual bullets to persist, e.g. "Budget confirmed: 750k€", "Met in person — serious buyer"')
+      }),
+      execute: async ({ lead_id, facts }) => {
+        const lead = await getLeadById(lead_id);
+        if (!lead) return { error: 'lead_not_found' };
+        const date = new Date().toISOString().slice(0, 10);
+        const tagged = facts.map((f) => f.includes('[') ? f : `[admin · ${date}] ${f}`);
+        scheduleAppendLeadLongTermFacts(lead_id, tagged);
+        return { ok: true, stored: tagged.length };
       }
     })
   };
