@@ -138,6 +138,11 @@ export async function editForumTopic(
     await b.api.editForumTopic(chatId, threadId, { name });
     return true;
   } catch (e) {
+    // TOPIC_NOT_MODIFIED = the title already equals `name`. That's success for our
+    // purposes (the topic shows the right title), not a failure — report true.
+    if (e instanceof Error && /TOPIC_NOT_MODIFIED/.test(e.message)) {
+      return true;
+    }
     console.error('[telegram] editForumTopic failed:', e);
     return false;
   }

@@ -36,6 +36,7 @@ import {
 } from '@/lib/db';
 import { createCalendarEvent, getAvailableSlots, resolveSlotIso } from '@/lib/calendar';
 import { sendTelegramMessage } from '@/lib/telegram';
+import { syncLeadTopicTitles } from '@/lib/telegram/sync-lead-topic-titles';
 import { dispatchReply } from '@/lib/dispatch';
 import { broadcastConversationUpdate, broadcastAgencyDataChanged } from '@/lib/events';
 import { notifyAdmins } from '@/lib/notify';
@@ -839,6 +840,12 @@ export function buildMainAssistantTools(
           summary: `Viewing booked by admin for ${listing.title}`
         });
         await updateLead(lead_id, { email, name: contact_name ?? lead.name ?? undefined, status: 'booked' });
+        // A real name may now be known — re-sync both topic titles (off-path, guarded).
+        if (contact_name && contact_name !== lead.name) {
+          void syncLeadTopicTitles(ctx.config.agency_id, lead_id).catch((e) =>
+            console.error('[main-assistant] syncLeadTopicTitles failed:', e)
+          );
+        }
         scheduleAppendLeadLongTermFacts(lead_id, [
           `viewing booked (by admin): ${listing.title} on ${formatSlot(slot_iso)}`,
           `contact: ${contact_name ?? lead.name ?? '—'} <${email}>`
