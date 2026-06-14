@@ -44,8 +44,10 @@ const BASE_LEAD: Lead = {
   qual_values: { budget: '650k€' },
   score_reason: 'Has budget, browsing actively',
   long_term_memory: null,
+  persona: null,
   listing_id: 'lst-1',
   telegram_user_id: null,
+  anon_seq: null,
   created_at: new Date(),
   updated_at: new Date()
 };
