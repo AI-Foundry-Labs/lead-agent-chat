@@ -10,7 +10,7 @@ import {
   listViewingsByConversation,
   getViewingById
 } from '@/lib/db';
-import { getAvailableSlots, createCalendarEvent } from '@/lib/calendar';
+import { getAvailableSlots, createCalendarEvent, resolveSlotIso } from '@/lib/calendar';
 import { notifyAdmins, notifyAdminsInChat } from '@/lib/notify';
 import { formatPrice, formatSlot } from '@/lib/format';
 import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
@@ -121,8 +121,8 @@ export function buildLeadTools(ctx: AgentContext) {
     get_available_slots: tool({
       description:
         'List candidate viewing slots for the property. ' +
-        'Returns each slot as { iso, label } where iso is the exact UTC timestamp to pass to book_viewing. ' +
-        'ALWAYS use the exact iso string from this response — never construct your own timestamp from the label.',
+        'Returns each slot as { iso, label } where iso is an opaque token to pass back to book_viewing. ' +
+        'ALWAYS copy the exact iso string from this response — never modify it, never construct your own timestamp from the label.',
       inputSchema: z.object({ count: z.number().int().min(1).max(5).optional() }),
       execute: async ({ count }) => {
         const listing = await getListing(listingId);
@@ -149,9 +149,16 @@ export function buildLeadTools(ctx: AgentContext) {
         contact_email: z.string().email().optional(),
         contact_name: z.string().optional()
       }),
-      execute: async ({ slot_iso, contact_email, contact_name }) => {
+      execute: async ({ slot_iso: rawSlotIso, contact_email, contact_name }) => {
         const listing = await getListing(listingId);
         if (!listing) return { error: 'no_listing_selected' };
+
+        // The model often corrupts the offered ISO (drops the Paris offset → +2h,
+        // and/or hallucinates the year). Snap it back to the real candidate slot
+        // by Paris wall-clock before doing anything with it.
+        const slot_iso = resolveSlotIso(rawSlotIso);
+        if (!slot_iso) return { error: 'invalid_slot' };
+
         const lead = await ensureLead(ctx);
         const email = contact_email ?? lead.email ?? undefined;
         if (!email) return { need_contact: true };

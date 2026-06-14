@@ -63,6 +63,40 @@ function* candidateSlots(start: Date, daysAhead: number) {
   }
 }
 
+/**
+ * Resolve a slot ISO string coming back from the LLM to a real offered candidate.
+ *
+ * The model frequently corrupts the offered ISO when echoing it (drops the
+ * `+02:00` Paris offset → time reads as UTC and shifts +2h, and/or hallucinates
+ * the year). We never trust its timestamp: instead we regenerate the deterministic
+ * candidate slots and snap to the one matching the model's Paris wall-clock
+ * (month + day + hour), which is unique within the booking horizon. This recovers
+ * the correct full ISO (right year + right offset) regardless of how the model
+ * mangled the string.
+ *
+ * Returns the canonical candidate ISO, or null if no candidate matches.
+ */
+export function resolveSlotIso(modelIso: string): string | null {
+  // Extract the literal date/hour digits the model emitted. Even when it mangles
+  // the offset or year, it echoes the MM-DD and HH from the label it was shown.
+  const m = modelIso.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):/);
+  if (!m) return null;
+  const wantMonth = m[2];
+  const wantDay = m[3];
+  const wantHour = m[4];
+
+  // Generate every deterministic candidate over the widest supported horizon so
+  // the match is independent of busy-filtering and preferredTimeline.
+  for (const iso of candidateSlots(new Date(), 56)) {
+    const c = iso.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):/);
+    if (!c) continue;
+    if (c[2] === wantMonth && c[3] === wantDay && c[4] === wantHour) {
+      return iso;
+    }
+  }
+  return null;
+}
+
 export async function getAvailableSlots(args: {
   calendarId: string;
   preferredTimeline: string | null;

@@ -34,7 +34,7 @@ import {
   leads,
   conversations
 } from '@/lib/db';
-import { createCalendarEvent, getAvailableSlots } from '@/lib/calendar';
+import { createCalendarEvent, getAvailableSlots, resolveSlotIso } from '@/lib/calendar';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { dispatchReply } from '@/lib/dispatch';
 import { broadcastConversationUpdate, broadcastAgencyDataChanged } from '@/lib/events';
@@ -801,7 +801,7 @@ export function buildMainAssistantTools(
         contact_email: z.string().email().optional().describe("Defaults to lead's email"),
         contact_name: z.string().optional()
       }),
-      execute: async ({ lead_id, listing_id, slot_iso, contact_email, contact_name }) => {
+      execute: async ({ lead_id, listing_id, slot_iso: rawSlotIso, contact_email, contact_name }) => {
         const lead = await getLeadById(lead_id);
         if (!lead) return { error: 'lead_not_found' };
         const conv = await getConversationByLeadId(lead_id);
@@ -812,6 +812,10 @@ export function buildMainAssistantTools(
         if (!listing) return { error: 'listing_not_found' };
         const email = contact_email ?? lead.email;
         if (!email) return { error: 'need_contact_email' };
+
+        // Snap the model's (often mangled) ISO back to the real candidate slot.
+        const slot_iso = resolveSlotIso(rawSlotIso);
+        if (!slot_iso) return { error: 'invalid_slot' };
 
         // Idempotency: don't double-book the same slot for this conversation
         const existing = await findBookedSlot(conv.id, slot_iso);

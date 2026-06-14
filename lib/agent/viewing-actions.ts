@@ -8,7 +8,7 @@ import {
   cancelViewing,
   rescheduleViewing
 } from '@/lib/db';
-import { deleteCalendarEvent, createCalendarEvent } from '@/lib/calendar';
+import { deleteCalendarEvent, createCalendarEvent, resolveSlotIso } from '@/lib/calendar';
 import { formatSlot } from '@/lib/format';
 import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
 
@@ -43,11 +43,15 @@ export async function cancelViewingWithMemory(
 /** Reschedule a booked viewing to a new slot, sync calendar, and record it in lead memory. */
 export async function rescheduleViewingWithMemory(
   viewingId: string,
-  newSlotIso: string,
+  rawNewSlotIso: string,
   calendarFallbackId: string
 ): Promise<{ ok: true; new_slot: string } | { error: string }> {
   const v = await getViewingById(viewingId);
   if (!v) return { error: 'viewing_not_found' };
+
+  // Snap the model's (often mangled) ISO back to the real candidate slot.
+  const newSlotIso = resolveSlotIso(rawNewSlotIso);
+  if (!newSlotIso) return { error: 'invalid_slot' };
 
   const listing = v.listing_id ? await getListing(v.listing_id) : null;
   const calendarId = listing?.agent_calendar_id || calendarFallbackId;
