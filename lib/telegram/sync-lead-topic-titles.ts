@@ -8,12 +8,12 @@
  * otherwise the 💬 Conversation topic shows "Dung" while the 🤖 Assistant topic
  * still shows "Visiteur #3" for the same person.
  *
- * Title shape:
- *   💬 Conversation: "{emoji?} 💬 {name} — {listing}"  (emoji = hot/warm/cold marker)
- *   🤖 Assistant:    "🤖 {name} — Assistant"            (no status emoji)
+ * Title shape (both topics carry the hot/warm/cold status emoji):
+ *   💬 Conversation: "{emoji?} 💬 {name} — {listing}"
+ *   🤖 Assistant:    "{emoji?} 🤖 {name} — Assistant"
  *
- * The Conversation topic carries the potential-status emoji (read from the lead's
- * current potential_status) so a name re-sync never drops a previously-set marker.
+ * The emoji is read from the lead's current potential_status so a name re-sync
+ * never drops a previously-set marker.
  *
  * No-op when the lead has no topics (agency unlinked / topics disabled). Guarded
  * at call sites: never throws into the agent turn.
@@ -62,19 +62,23 @@ export async function syncLeadTopicTitles(
   const name = buildLeadDisplayName(lead.name, lead.email, lead.anon_seq);
   const emoji = lead.potential_status ? STATUS_EMOJI[lead.potential_status] : '';
 
+  const withEmoji = (base: string) => clampTitle(emoji ? `${emoji} ${base}` : base);
+
   let conversationRenamed = false;
   if (topics.conversation_topic_id) {
-    const base = buildConversationTopicTitle(name, listing?.title);
-    const title = clampTitle(emoji ? `${emoji} ${base}` : base);
     conversationRenamed = await editForumTopic(
       topics.group_chat_id,
       topics.conversation_topic_id,
-      title
+      withEmoji(buildConversationTopicTitle(name, listing?.title))
     );
   }
   if (topics.assistant_topic_id) {
-    const title = clampTitle(buildAssistantTopicTitle(name));
-    await editForumTopic(topics.group_chat_id, topics.assistant_topic_id, title);
+    // Assistant topic carries the same status emoji as the Conversation topic.
+    await editForumTopic(
+      topics.group_chat_id,
+      topics.assistant_topic_id,
+      withEmoji(buildAssistantTopicTitle(name))
+    );
   }
 
   return conversationRenamed;

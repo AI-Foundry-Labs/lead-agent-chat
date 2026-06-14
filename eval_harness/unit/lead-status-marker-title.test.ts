@@ -58,6 +58,14 @@ describe('status marker title', () => {
   it('omits listing when absent', () => {
     assert.equal(markerTitle('cold', 'John', null, null), '❄️ 💬 John');
   });
+
+  it('applies the same status emoji to the assistant topic title', () => {
+    const name = buildLeadDisplayName('Marie D.', null);
+    assert.equal(
+      `${STATUS_EMOJI.hot} ${buildAssistantTopicTitle(name)}`,
+      '🔥 🤖 Marie D. — Assistant'
+    );
+  });
 });
 
 describe('both topic titles share the same display name', () => {
