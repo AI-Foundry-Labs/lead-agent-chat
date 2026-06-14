@@ -82,7 +82,7 @@ async function seedConfig(agencyId: string) {
     agency_id: agencyId,
     name: 'Agence Lumière',
     tone:
-      'Professional and warm. Parisian agency style. Never overly formal, never casual. Always reply in the same language the lead writes in (French or English).',
+      'Professional and warm. Parisian agency style. Never overly formal, never casual. Always reply in French only — this is a France-exclusive agency.',
     qualification_criteria: DEFAULT_CRITERIA,
     calendar_id: process.env.GOOGLE_CALENDAR_ID ?? 'primary'
   });

@@ -5,16 +5,13 @@ function listingBlock(listing: Listing | null, lang: Language): string {
   if (!listing) {
     return '[LISTING CONTEXT]\nNo specific property selected — the visitor may be browsing.';
   }
-  // Use the matching-language listing fields so the prompt context does not bias
-  // the model toward French when the visitor's language is English.
-  const en = lang === 'en';
   return `[LISTING CONTEXT]
-The visitor is looking at: ${en ? listing.title_en : listing.title}
+The visitor is looking at: ${listing.title}
 Address: ${listing.address}
 Price: ${formatPrice(listing.price, lang)}
-Surface: ${listing.surface_m2} m², ${listing.rooms} rooms, ${en ? listing.floor_en : listing.floor}
-Description: ${en ? listing.description_en : listing.description}
-Features: ${(en ? listing.key_features_en : listing.key_features).join(', ')}
+Surface: ${listing.surface_m2} m², ${listing.rooms} rooms, ${listing.floor}
+Description: ${listing.description}
+Features: ${listing.key_features.join(', ')}
 Agent: ${listing.agent_name}`.trim();
 }
 
@@ -104,15 +101,11 @@ export function buildLeadSystemPrompt(args: {
   const { config, listing, lead, crossThreadContext } = args;
   const channel = args.channel ?? 'web';
   const lang: Language = args.lang ?? 'fr';
-  const defaultLang = lang === 'en' ? 'English' : 'French';
-  return `[CRITICAL — LANGUAGE]
-You may ONLY reply in English or French — no other language is permitted.
-Default language for this conversation: ${defaultLang}.
-- If the visitor writes in English → reply in English.
-- If the visitor writes in French → reply in French.
-- If the visitor writes in any other language (Vietnamese, Spanish, etc.) → reply
-  in ${defaultLang} and politely note that the conversation is in ${defaultLang}.
-The agency/listing context is in French — this does not affect your reply language.
+  return `[CRITICAL — LANGUAGE — ABSOLUTE RULE]
+You MUST always reply in French only. No other language is ever permitted — not English, not Vietnamese, not Spanish.
+- Regardless of what language the visitor writes in, ALWAYS reply in French.
+- If the visitor writes in another language, reply in French and politely note that this agency communicates exclusively in French.
+This rule overrides everything. French only, always.
 
 [ROLE]
 You are the AI assistant for ${config.name}, a real-estate agency in France.
@@ -203,8 +196,7 @@ Give clear, complete, specific answers. Never be vague or half-answer.
   buy), call update_lead_status with a memory_note so their state stays accurate.
 
 [RULES]
-Reply in English or French only — match the visitor's language if English or French,
-otherwise default to ${defaultLang}. Never use any other language.
+Reply in French only — always, regardless of the visitor's language. Never use any other language.
 Ask one question at a time. Be warm and thorough — complete sentences, proper grammar,
 courteous phrasing. Never invent property facts — rely on the tools.
 Never claim a viewing is booked unless book_viewing returned success.

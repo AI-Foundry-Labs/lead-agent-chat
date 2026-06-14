@@ -78,8 +78,7 @@ async function handleAgencyGroupLink(
   if (!agencyId) {
     await sendTelegramMessage(
       chatId,
-      "❌ Token invalide ou expiré. Demandez un nouveau code depuis l'interface web.\n" +
-      '❌ Invalid or expired token. Request a new code from the web interface.'
+      "❌ Token invalide ou expiré. Demandez un nouveau code depuis l'interface web."
     );
     return;
   }
@@ -102,10 +101,7 @@ async function handleAgencyGroupLink(
       await setAgencyMasterTopic(agencyId, threadId);
       void enqueueGroupSend(
         chatId,
-        "🛠 Topic Master prêt — envoyez un message ici pour configurer l'agence " +
-        '(critères, annonces, règles).\n' +
-        '🛠 Master topic ready — message here to configure the agency ' +
-        '(criteria, listings, rules).',
+        "🛠 Topic Master prêt — envoyez un message ici pour configurer l'agence (critères, annonces, règles).",
         { threadId, kind: 'critical' }
       );
     } else {
@@ -115,11 +111,9 @@ async function handleAgencyGroupLink(
 
   await sendTelegramMessage(
     chatId,
-    "✅ Groupe lié à l'agence. Le bot est prêt à créer des fils par lead.\n" +
-    '✅ Group linked to the agency. The bot is ready to create per-lead topics.\n\n' +
-    'Prochaines étapes / Next steps:\n' +
-    '• Les nouveaux leads déclencheront automatiquement la création de sujets.\n' +
-    '• New leads will automatically trigger topic creation.'
+    "✅ Groupe lié à l'agence. Le bot est prêt à créer des fils par lead.\n\n" +
+    'Prochaines étapes :\n' +
+    '• Les nouveaux leads déclencheront automatiquement la création de sujets.'
   );
 }
 
