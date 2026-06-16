@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # Usage:
-#   ./eval_harness/run-tests.sh           # all tests
+#   ./eval_harness/run-tests.sh           # all tests (unit + agent + llm + smoke)
 #   ./eval_harness/run-tests.sh unit      # unit only
+#   ./eval_harness/run-tests.sh agent     # agent schema/logic tests (no LLM)
+#   ./eval_harness/run-tests.sh llm       # real LLM call contracts (needs API key)
 #   ./eval_harness/run-tests.sh smoke     # smoke (needs server on :3000)
+#
+# LLM contract tests skip gracefully when no API key is found.
+# Set LLM_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, or AI_GATEWAY_API_KEY.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,7 +29,37 @@ run_suite() {
   fi
 }
 
+# LLM contract tests use --import tsx (universal loader) so that @/ path aliases
+# in source modules are resolved correctly when they load as ES modules.
+run_llm_suite() {
+  local label="$1"
+  local pattern="$2"
+  echo ""
+  echo "━━━ $label ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  if node --import tsx --test $pattern 2>&1; then
+    PASS=$((PASS + 1))
+  else
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 cd "$ROOT"
+
+# Load env files for LLM keys (.env first, .env.local overrides).
+# Uses line-by-line parsing instead of source to handle values with spaces/special chars.
+load_env_file() {
+  local file="$1"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue   # skip comments
+    [[ -z "${line//[[:space:]]/}" ]] && continue  # skip blank lines
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      export "${BASH_REMATCH[1]}=${BASH_REMATCH[2]}"
+    fi
+  done < "$file"
+}
+for envfile in "$ROOT/.env" "$ROOT/.env.local"; do
+  [[ -f "$envfile" ]] && load_env_file "$envfile"
+done
 
 if [[ "$MODE" == "all" || "$MODE" == "unit" ]]; then
   run_suite "Unit: Calendar / Timezone"             "$HARNESS/unit/calendar-timezone.test.ts"
@@ -49,6 +84,14 @@ if [[ "$MODE" == "all" || "$MODE" == "agent" ]]; then
   run_suite "Agent: Cross-Thread Context"     "$HARNESS/agent/memory/cross-thread-context.test.ts"
   run_suite "Agent: Memory Constants"         "$HARNESS/agent/memory/memory-constants.test.ts"
   run_suite "Agent: Handoff Rule Matcher"     "$HARNESS/agent/rules/handoff-rule-matcher.test.ts"
+fi
+
+if [[ "$MODE" == "all" || "$MODE" == "llm" ]]; then
+  run_llm_suite "LLM: Detect Language"          "$HARNESS/agent/llm-contracts/detect-lang.test.ts"
+  run_llm_suite "LLM: Rule Matcher"             "$HARNESS/agent/llm-contracts/rule-matcher.test.ts"
+  run_llm_suite "LLM: Summarize Thread"         "$HARNESS/agent/llm-contracts/summarize-thread.test.ts"
+  run_llm_suite "LLM: Lead Conversation Flow"   "$HARNESS/agent/llm-contracts/lead-conversation-flow.test.ts"
+  run_llm_suite "LLM: Admin Conversation Flow"  "$HARNESS/agent/llm-contracts/admin-conversation-flow.test.ts"
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "smoke" ]]; then
