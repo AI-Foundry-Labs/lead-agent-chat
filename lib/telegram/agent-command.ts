@@ -27,3 +27,25 @@ export function parseAgentCallback(data: string): AgentCallback {
   if (m) return { kind: 'lead', leadId: m[1] };
   return null;
 }
+
+import type { AgentSession } from '@/lib/db/telegram-agent-sessions';
+
+export type LeadButton = { id: string; label: string };
+
+export function buildAgentKeyboard(
+  leads: LeadButton[],
+  max = 8
+): { inline_keyboard: { text: string; callback_data: string }[][] } {
+  const rows: { text: string; callback_data: string }[][] = [
+    [{ text: '🤖 Main', callback_data: 'agent:main' }]
+  ];
+  for (const lead of leads.slice(0, max)) {
+    rows.push([{ text: `👤 ${lead.label}`, callback_data: `agent:lead:${lead.id}` }]);
+  }
+  return { inline_keyboard: rows };
+}
+
+export function formatAgentLabel(session: AgentSession | null, leadName?: string | null): string {
+  if (session?.agent_kind === 'operator') return `👤 Operator · ${leadName ?? 'lead'}`;
+  return '🤖 Main';
+}
