@@ -21,7 +21,7 @@ import { telegramConfigured } from '@/lib/telegram';
 import { cancelViewingWithMemory, rescheduleViewingWithMemory } from '@/lib/agent/viewing-actions';
 import { syncLeadStatusToTelegram } from '@/lib/telegram/lead-status-marker';
 import { syncLeadTopicTitles } from '@/lib/telegram/sync-lead-topic-titles';
-import { notif } from '@/lib/agent/notification-strings';
+import { generateStaffReport } from '@/lib/agent/staff-report';
 import type { AgentContext } from './context';
 import { ensureLead } from './context';
 
@@ -209,10 +209,14 @@ export function buildLeadTools(ctx: AgentContext) {
             console.error('[lead-tools] syncLeadTopicTitles failed:', e)
           );
         }
-        const n = notif(ctx.lang);
         const contact = contact_name ?? lead.name ?? email;
-        await notifyAdmins(n.viewing_booked_label(listing.title, formatSlot(slot_iso), contact));
-        await notifyAdminsInChat(n.viewing_booked_chat(listing.title, formatSlot(slot_iso), contact));
+        // One agentic report reused for both the Telegram 🔔 line and the chat panel.
+        const bookingReport = await generateStaffReport(
+          { kind: 'viewing_booked', title: listing.title, slot: formatSlot(slot_iso), contact },
+          ctx.lang
+        );
+        await notifyAdmins(bookingReport);
+        await notifyAdminsInChat(bookingReport);
         scheduleAppendLeadLongTermFacts(lead.id, [
           `viewing booked: ${listing.title} (${listing.address}) on ${formatSlot(slot_iso)}`,
           `contact: ${contact_name ?? lead.name ?? '—'} <${email}>`,
@@ -238,7 +242,9 @@ export function buildLeadTools(ctx: AgentContext) {
         if (ctx.conversation.lead_id) {
           await updateLead(ctx.conversation.lead_id, { status: 'handoff' });
         }
-        await notifyAdmins(notif(ctx.lang).handoff_requested(reason));
+        await notifyAdmins(
+          await generateStaffReport({ kind: 'handoff_requested', reason }, ctx.lang)
+        );
         return { ok: true, handed_off: true };
       }
     }),
