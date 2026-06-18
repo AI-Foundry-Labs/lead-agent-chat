@@ -136,13 +136,14 @@ export async function handleTelegramUpdate(
     const chatId = String(cq.message?.chat?.id ?? '');
     const threadId = cq.message?.message_thread_id;
     const data = cq.data ?? '';
+    const fromId = cq.from?.id != null ? String(cq.from.id) : '';
     const agency = chatId ? await getAgencyByTelegramGroup(chatId) : null;
     if (
       agency &&
       agency.telegram_master_topic_id !== null &&
       threadId === agency.telegram_master_topic_id
     ) {
-      await handleAgentCallback(chatId, agency, data, threadId);
+      await handleAgentCallback(chatId, agency, fromId, data, threadId);
       return 'group';
     }
     return 'ignored';

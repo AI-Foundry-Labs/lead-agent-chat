@@ -7,6 +7,7 @@ export interface TelegramUpdate {
   callback_query?: {
     id?: string;
     data?: string;
+    from?: { id?: number | string };
     message?: {
       chat?: { id?: number | string };
       message_thread_id?: number;

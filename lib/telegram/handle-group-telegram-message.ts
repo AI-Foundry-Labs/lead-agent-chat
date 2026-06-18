@@ -193,9 +193,17 @@ export async function handleMasterTopicMessage(
 export async function handleAgentCallback(
   chatId: string,
   agency: Agency,
+  fromId: string,
   data: string,
   threadId: number
 ): Promise<void> {
+  const admin = await resolveActingAdmin(fromId, agency.id);
+  if (!admin) {
+    void enqueueGroupSend(chatId, '❌ Aucun administrateur trouvé. / No admin found.', {
+      threadId, kind: 'critical'
+    });
+    return;
+  }
   const cb = parseAgentCallback(data);
   if (!cb) return;
   if (cb.kind === 'main') {
