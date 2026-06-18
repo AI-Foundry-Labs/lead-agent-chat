@@ -421,3 +421,14 @@ export const telegram_link_tokens = pgTable(
     expires_idx: index('telegram_link_tokens_expires_idx').on(t.expires_at)
   })
 );
+
+// ─── Telegram agent hub session (one active subagent per agency) ────────────
+// agent_kind='main' → main-assistant; agent_kind='operator' → operator for lead_id.
+export const telegram_agent_sessions = pgTable('telegram_agent_sessions', {
+  agency_id: uuid('agency_id')
+    .primaryKey()
+    .references(() => agencies.id, { onDelete: 'cascade' }),
+  agent_kind: varchar('agent_kind', { length: 20 }).notNull(), // 'main' | 'operator'
+  lead_id: uuid('lead_id').references(() => leads.id, { onDelete: 'set null' }),
+  updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+});

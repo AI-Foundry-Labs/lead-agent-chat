@@ -17,7 +17,8 @@ export {
   telegram_link_tokens,
   lead_telegram_link_tokens,
   agency_telegram_link_tokens,
-  lead_telegram_topics
+  lead_telegram_topics,
+  telegram_agent_sessions
 } from './client';
 
 export * from './conversations';
@@ -35,3 +36,4 @@ export * from './agencies';
 export * from './agency-telegram-links';
 export * from './lead-telegram-topics';
 export type { LeadTelegramTopics } from './lead-telegram-topics';
+export * from './telegram-agent-sessions';
