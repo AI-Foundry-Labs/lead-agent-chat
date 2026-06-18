@@ -331,3 +331,11 @@ export async function touchConversation(id: string): Promise<void> {
     .set({ updated_at: new Date() })
     .where(eq(conversations.id, id));
 }
+
+/**
+ * Hard-delete all conversations for a lead (used before deleteLead to avoid orphan rows).
+ * Cascades to messages and viewing_slots that reference conversation_id with onDelete cascade.
+ */
+export async function deleteConversationsByLeadId(leadId: string): Promise<void> {
+  await db.delete(conversations).where(eq(conversations.lead_id, leadId));
+}

@@ -11,7 +11,7 @@
 import { db, conversations, messages, leads, admins } from '../lib/db/client';
 import { createConversation, getAgencyConfig, listListings } from '../lib/db';
 import { runAgentTurn } from '../lib/agent/run';
-import { buildMainAssistantTools } from '../lib/agent/tools/main-assistant-tools';
+import { buildMainAssistantTools } from '../lib/agent/tools/main-assistant';
 import { buildLeadTools } from '../lib/agent/tools/lead-tools';
 import { eq, inArray } from 'drizzle-orm';
 import type { AgentContext } from '../lib/agent/tools/context';

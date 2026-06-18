@@ -28,7 +28,7 @@ import {
 } from '@/lib/agent/thread-memory';
 import { buildLeadTools } from '@/lib/agent/tools/lead-tools';
 import { buildOperatorTools } from '@/lib/agent/tools/operator-tools';
-import { buildMainAssistantTools } from '@/lib/agent/tools/main-assistant-tools';
+import { buildMainAssistantTools } from '@/lib/agent/tools/main-assistant';
 import { buildMainAssistantSystemPrompt } from '@/lib/agent/prompts/main-assistant-prompt';
 import type { AgentContext } from '@/lib/agent/tools/context';
 import type { Conversation, Language } from '@/lib/types';
