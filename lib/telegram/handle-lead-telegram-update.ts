@@ -22,7 +22,8 @@ import { routeGroupMessage } from '@/lib/telegram/route-group-message';
 import {
   handleOperatorTopicMessage,
   handleConversationTopicMessage,
-  handleMasterTopicMessage
+  handleMasterTopicMessage,
+  handleAgentCallback
 } from '@/lib/telegram/handle-group-telegram-message';
 import {
   handleAdminStart,
@@ -128,6 +129,25 @@ async function handleAgencyGroupLink(
 export async function handleTelegramUpdate(
   update: TelegramUpdate
 ): Promise<'admin' | 'lead' | 'group' | 'unlinked' | 'ignored'> {
+  // ── CALLBACK_QUERY branch (inline-keyboard taps) ──────────────────────────
+  // Inline-keyboard taps arrive as callback_query, not message.
+  if (update.callback_query) {
+    const cq = update.callback_query;
+    const chatId = String(cq.message?.chat?.id ?? '');
+    const threadId = cq.message?.message_thread_id;
+    const data = cq.data ?? '';
+    const agency = chatId ? await getAgencyByTelegramGroup(chatId) : null;
+    if (
+      agency &&
+      agency.telegram_master_topic_id !== null &&
+      threadId === agency.telegram_master_topic_id
+    ) {
+      await handleAgentCallback(chatId, agency, data, threadId);
+      return 'group';
+    }
+    return 'ignored';
+  }
+
   const msg = update?.message;
   const text = msg?.text;
   const fromId = msg?.from?.id != null ? String(msg.from.id) : null;

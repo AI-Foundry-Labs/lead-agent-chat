@@ -3,6 +3,15 @@
 export interface TelegramUpdate {
   // Unique monotonic ID — used for idempotency deduplication.
   update_id?: number;
+  // Inline-keyboard button taps arrive here instead of message.
+  callback_query?: {
+    id?: string;
+    data?: string;
+    message?: {
+      chat?: { id?: number | string };
+      message_thread_id?: number;
+    };
+  };
   message?: {
     // Per-chat message id — used to react to / reply to a specific message.
     message_id?: number;
