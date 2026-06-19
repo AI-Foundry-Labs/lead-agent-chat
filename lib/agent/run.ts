@@ -14,12 +14,10 @@ import {
 import { broadcastConversationUpdate } from '@/lib/events';
 import { dispatchReply } from '@/lib/dispatch';
 import { reportTurnToTopic } from '@/lib/agent/report-turn-to-topic';
-import { notifyAdminsInChat } from '@/lib/notify';
-import { notifyAgency } from '@/lib/telegram/notify-agency';
 import { matchRule } from '@/lib/agent/rules';
 import { reportHandoffBriefing } from '@/lib/agent/report-handoff-briefing';
 import { detectMessageLang } from '@/lib/agent/detect-lang';
-import { generateStaffReport } from '@/lib/agent/staff-report';
+import { pushAgentNotification } from '@/lib/agent/push-agent-notification';
 import { buildLeadSystemPrompt } from '@/lib/agent/prompts';
 import { buildOperatorSystemPrompt } from '@/lib/agent/prompts/operator-prompts';
 import { buildCrossThreadContextBlock } from '@/lib/agent/cross-thread-context';
@@ -112,14 +110,14 @@ export async function runAgentTurn(
   // Takeover safety: a lead conversation in manual mode does not auto-reply.
   if (conversation.type === 'lead' && conversation.mode === 'manual') {
     agentLog.info('agent.manual_mode', { conversationId, messageLen: message.length });
-    const manualSummary = await generateStaffReport(
-      { kind: 'manual', message: message.slice(0, 300) },
-      detectedLang
-    );
     if (conversation.lead_id) {
-      void notifyAgency(conversation.agency_id, conversation.lead_id, manualSummary);
+      void pushAgentNotification({
+        agencyId: conversation.agency_id,
+        leadId: conversation.lead_id,
+        event: { kind: 'manual', message: message.slice(0, 300) },
+        lang: detectedLang
+      });
     }
-    await notifyAdminsInChat(manualSummary);
     return { conversation, reply: '', status: 'manual' };
   }
 
@@ -135,12 +133,13 @@ export async function runAgentTurn(
         agentLog.info('agent.handoff', { conversationId, rule: matched.description, leadId: conversation.lead_id });
         if (conversation.lead_id)
           await updateLead(conversation.lead_id, { status: 'handoff' });
-        const handoffSummary = await generateStaffReport(
-          { kind: 'handoff', rule: matched.description, message: message.slice(0, 160) },
-          detectedLang
-        );
         if (conversation.lead_id) {
-          void notifyAgency(conversation.agency_id, conversation.lead_id, handoffSummary);
+          void pushAgentNotification({
+            agencyId: conversation.agency_id,
+            leadId: conversation.lead_id,
+            event: { kind: 'handoff', rule: matched.description, message: message.slice(0, 300) },
+            lang: detectedLang
+          });
         }
         // Lead reports up: generate a briefing from this lead's own context and post it
         // into the admin's main_assistant panel (fire-and-forget — no separate operator agent).

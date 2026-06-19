@@ -11,7 +11,7 @@ import { notifyAdmins } from '@/lib/notify';
 import { formatSlot } from '@/lib/format';
 import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
 import { cancelViewingWithMemory, rescheduleViewingWithMemory } from '@/lib/agent/viewing-actions';
-import { generateStaffReport } from '@/lib/agent/staff-report';
+import { pushAgentNotification } from '@/lib/agent/push-agent-notification';
 import type { AgentContext } from './context';
 
 export function buildOperatorLeadActions(ctx: AgentContext, scopedLeadId: string | null) {
@@ -165,12 +165,12 @@ export function buildOperatorLeadActions(ctx: AgentContext, scopedLeadId: string
         if (isIdentifiedLead(lead)) {
           await updateLead(id, { status: 'handoff' });
         }
-        await notifyAdmins(
-          await generateStaffReport(
-            { kind: 'handoff_requested', reason, leadName: lead?.name },
-            ctx.lang
-          )
-        );
+        void pushAgentNotification({
+          agencyId: ctx.config.agency_id,
+          leadId: id,
+          event: { kind: 'handoff_requested', reason, leadName: lead?.name },
+          lang: ctx.lang
+        });
         const date = new Date().toISOString().slice(0, 10);
         scheduleAppendLeadLongTermFacts(id, [`ADMIN ACTION — ${date}: handoff requested — ${reason}`]);
         return { ok: true, handed_off: true };
