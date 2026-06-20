@@ -17,14 +17,16 @@ export async function GET(request: Request) {
   const conversationId = searchParams.get('conversationId');
   if (!conversationId) return new Response('missing conversationId', { status: 400 });
 
+  let adminAgencyId: string;
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
+    adminAgencyId = admin.agency_id;
   } catch (e) {
     return toAuthResponse(e) ?? new Response('unauthorized', { status: 401 });
   }
 
   const conv = await getConversation(conversationId);
-  if (!conv) return new Response('not_found', { status: 404 });
+  if (!conv || conv.agency_id !== adminAgencyId) return new Response('not_found', { status: 404 });
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

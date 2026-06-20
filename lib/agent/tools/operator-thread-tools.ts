@@ -17,7 +17,7 @@ import {
 } from '@/lib/db';
 import { isIdentifiedLead } from '@/lib/leads/is-identified-lead';
 import { MODEL } from '@/lib/llm';
-import { dispatchReply } from '@/lib/dispatch';
+import { dispatchReply, mirrorLeadTurnToTopic } from '@/lib/dispatch';
 import { broadcastConversationUpdate } from '@/lib/events';
 import type { Conversation } from '@/lib/types';
 import type { AgentContext } from './context';
@@ -44,7 +44,7 @@ export function buildOperatorThreadTools(ctx: AgentContext, scopedLeadId: string
       execute: async ({ limit }) => {
         const threads = scopedLeadId
           ? await listConversationsByLeadId(scopedLeadId)
-          : await listAnonymousVisitorThreads();
+          : await listAnonymousVisitorThreads(ctx.config.agency_id);
         return threads.slice(0, limit ?? 25).map((t) => ({
           conversation_id: t.id,
           lead_id: t.lead_id,
@@ -114,6 +114,9 @@ Write only the reply text.`
         if (!conv) return { error: 'thread_not_found_or_out_of_scope' };
         await addMessage({ conversation_id, role: 'admin', content });
         await dispatchReply(conv, content);
+        // Mirror into the lead's 💬 Conversation topic so it stays a complete
+        // record. The agent sent this on the operator's instruction → 🤖 Agent.
+        await mirrorLeadTurnToTopic(conv, 'agent', content).catch(() => {});
         broadcastConversationUpdate(conversation_id);
         return { ok: true, sent: true, conversation_id };
       }

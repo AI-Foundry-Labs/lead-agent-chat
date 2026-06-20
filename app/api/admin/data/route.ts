@@ -13,14 +13,16 @@ export const runtime = 'nodejs';
 
 export async function GET() {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
+    const agencyId = admin.agency_id;
+
     const [leads, listings, config, rules, booked, anonThreads] = await Promise.all([
-      listIdentifiedLeads(),
-      listListings(),
-      getAgencyConfig(),
-      listHandoffRules(),
-      listBookedViewings(),
-      listAnonymousVisitorThreads()
+      listIdentifiedLeads(agencyId),
+      listListings(agencyId),
+      getAgencyConfig(agencyId),
+      listHandoffRules(agencyId),
+      listBookedViewings(agencyId),
+      listAnonymousVisitorThreads(agencyId)
     ]);
 
     const titleById = new Map(listings.map((l) => [l.id, l.title]));
@@ -59,7 +61,8 @@ export async function GET() {
       listings,
       criteria: config?.qualification_criteria ?? [],
       config: config ? { name: config.name, tone: config.tone } : null,
-      rules
+      rules,
+      adminPersona: admin.persona ?? null
     });
   } catch (e) {
     return toAuthResponse(e) ?? Response.json({ error: 'error' }, { status: 500 });

@@ -27,10 +27,10 @@ function toolNamesOf(toolCalls: unknown): string[] {
 
 async function main() {
   console.log('\n=== Unified Operator Smoke Test ===\n');
-  const config = await getAgencyConfig();
-  if (!config) { console.error('✗ run db:seed'); process.exit(1); }
   const [admin] = await db.select().from(admins).limit(1);
   if (!admin) { console.error('✗ no admin'); process.exit(1); }
+  const config = await getAgencyConfig(admin.agency_id);
+  if (!config) { console.error('✗ run db:seed'); process.exit(1); }
 
   // ── Phase 1: tool presence (both scopes share the same toolset) ──
   const mockCtx = {
@@ -49,11 +49,11 @@ async function main() {
 
   // ── Phase 2: lead mode — update potential via natural language ──
   const [lead] = await db.insert(leads).values({
-    channel: 'web', email: 'operator.test@example.com', name: 'Operator Test',
+    agency_id: admin.agency_id, channel: 'web', email: 'operator.test@example.com', name: 'Operator Test',
     listing_id: null, language: 'en', status: 'active', qual_values: {}
   }).returning();
   createdLeadIds.push(lead.id);
-  const operatorConv = await createConversation({ type: 'operator', lead_id: lead.id, primary_channel: 'web' });
+  const operatorConv = await createConversation({ type: 'operator', agency_id: admin.agency_id, lead_id: lead.id, primary_channel: 'web' });
   createdConvIds.push(operatorConv.id);
 
   const r1 = await runAgentTurn(
@@ -70,7 +70,7 @@ async function main() {
   console.log(`  reply: "${r1.reply.slice(0, 100)}..."\n`);
 
   // ── Phase 3: pool mode — list anonymous threads ──
-  const poolConv = await getOrCreateAnonymousOperator();
+  const poolConv = await getOrCreateAnonymousOperator(admin.agency_id);
   const r2 = await runAgentTurn(
     poolConv.id,
     'List the anonymous visitor threads in the triage pool.',

@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export async function GET() {
   try {
     const admin = await requireAdmin();
-    const conv = await getOrCreateMainAssistant(admin.id);
+    const conv = await getOrCreateMainAssistant(admin.id, admin.agency_id);
     const messages = await getVisibleMessages(conv.id);
     return Response.json({
       conversationId: conv.id,
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return Response.json({ error: 'invalid_input' }, { status: 400 });
     }
-    const conv = await getOrCreateMainAssistant(admin.id);
+    const conv = await getOrCreateMainAssistant(admin.id, admin.agency_id);
     // Forward user message to Telegram so both channels stay in sync.
     void dispatchUserMessage(conv, admin.name ?? 'Admin', parsed.data.message);
     const result = await runAgentTurn(conv.id, parsed.data.message, {

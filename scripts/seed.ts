@@ -7,7 +7,8 @@ import {
   getAgencyConfig,
   upsertAgencyConfig,
   db,
-  admins
+  admins,
+  agencies
 } from '../lib/db';
 import { hashPassword } from '../lib/auth';
 import type { Criterion } from '../lib/types';
@@ -38,12 +39,47 @@ const DEFAULT_CRITERIA: Criterion[] = [
   }
 ];
 
-async function seedConfig() {
-  if (await getAgencyConfig()) {
+/**
+ * Ensure a default agency row exists. Returns its id.
+ * This is the single tenant used in dev / single-agency deployments.
+ */
+async function seedDefaultAgency(): Promise<string> {
+  const existing = await db.select().from(agencies).limit(1);
+  if (existing[0]) {
+    console.log('• Default agency already present');
+    return existing[0].id;
+  }
+
+  // Derive primary_host from APP_BASE_URL env (e.g. "https://myapp.com" → "myapp.com").
+  let primaryHost: string | null = null;
+  const baseUrl = process.env.APP_BASE_URL;
+  if (baseUrl) {
+    try {
+      primaryHost = new URL(baseUrl).hostname;
+    } catch {
+      // ignore malformed URL
+    }
+  }
+
+  const [agency] = await db
+    .insert(agencies)
+    .values({
+      name: 'Default Agency',
+      slug: 'default',
+      primary_host: primaryHost
+    })
+    .returning();
+  console.log(`✓ Default agency created (id: ${agency.id}, host: ${primaryHost ?? 'unset'})`);
+  return agency.id;
+}
+
+async function seedConfig(agencyId: string) {
+  if (await getAgencyConfig(agencyId)) {
     console.log('• Agency config already present');
     return;
   }
   await upsertAgencyConfig({
+    agency_id: agencyId,
     name: 'Agence Lumière',
     tone:
       'Professional and warm. Parisian agency style. Never overly formal, never casual. Always reply in the same language the lead writes in (French or English).',
@@ -53,13 +89,14 @@ async function seedConfig() {
   console.log('✓ Agency config created (5 default criteria)');
 }
 
-async function seedRules() {
-  const rules = await listHandoffRules();
+async function seedRules(agencyId: string) {
+  const rules = await listHandoffRules(agencyId);
   const has = (txt: string) =>
     rules.some((r) => r.description.toLowerCase().includes(txt.toLowerCase()));
 
   if (!has('negotiation')) {
     await createHandoffRule({
+      agency_id: agencyId,
       description:
         'Escalate when the lead asks for a price reduction or mentions negotiation.',
       trigger_keywords: [
@@ -78,6 +115,7 @@ async function seedRules() {
 
   if (!has('vincennes')) {
     await createHandoffRule({
+      agency_id: agencyId,
       description: 'Always escalate for the Vincennes house (>1M€).',
       trigger_keywords: [
         'vincennes',
@@ -90,13 +128,14 @@ async function seedRules() {
   }
 }
 
-async function seedListings() {
-  if ((await listListings()).length > 0) {
+async function seedListings(agencyId: string) {
+  if ((await listListings(agencyId)).length > 0) {
     console.log('• listings already present');
     return;
   }
   await createListing({
     id: 'marais-3p',
+    agency_id: agencyId,
     title: 'Appartement 3 pièces — Le Marais',
     title_en: '3-room Apartment — Le Marais',
     address: '14 rue de Bretagne, 75004 Paris',
@@ -133,6 +172,7 @@ async function seedListings() {
   });
   await createListing({
     id: 'montmartre-studio',
+    agency_id: agencyId,
     title: 'Studio meublé — Montmartre',
     title_en: 'Furnished Studio — Montmartre',
     address: '8 rue des Abbesses, 75018 Paris',
@@ -167,6 +207,7 @@ async function seedListings() {
   });
   await createListing({
     id: 'vincennes-maison',
+    agency_id: agencyId,
     title: 'Maison avec jardin — Vincennes',
     title_en: 'House with Garden — Vincennes',
     address: '32 avenue de Paris, 94300 Vincennes',
@@ -206,32 +247,57 @@ async function seedListings() {
   console.log('✓ 3 default listings created');
 }
 
-async function seedAdmin() {
-  // Defaults for easy local login; override via env in production.
-  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@gmail.com';
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'admin123';
+async function ensureAdmin(input: {
+  agencyId: string;
+  email: string;
+  password: string;
+  name: string;
+  preferredLang?: string;
+}) {
   const existing = await db
     .select()
     .from(admins)
-    .where(eq(admins.email, adminEmail))
+    .where(eq(admins.email, input.email))
     .limit(1);
   if (existing[0]) {
-    console.log(`• Admin already present: ${adminEmail}`);
+    console.log(`• Admin already present: ${input.email}`);
     return;
   }
   await db.insert(admins).values({
-    email: adminEmail,
-    password_hash: await hashPassword(adminPassword),
-    name: process.env.SEED_ADMIN_NAME ?? 'Admin'
+    agency_id: input.agencyId,
+    email: input.email,
+    password_hash: await hashPassword(input.password),
+    name: input.name,
+    preferred_lang: input.preferredLang ?? 'fr'
   });
-  console.log(`✓ Admin created: ${adminEmail}`);
+  console.log(`✓ Admin created: ${input.email}`);
+}
+
+async function seedAdmins(agencyId: string) {
+  // Defaults for easy local login; override primary admin via env in production.
+  await ensureAdmin({
+    agencyId,
+    email: process.env.SEED_ADMIN_EMAIL ?? 'admin@gmail.com',
+    password: process.env.SEED_ADMIN_PASSWORD ?? 'admin123',
+    name: process.env.SEED_ADMIN_NAME ?? 'Admin',
+    preferredLang: 'fr'
+  });
+
+  await ensureAdmin({
+    agencyId,
+    email: process.env.SEED_ADMIN_FR_EMAIL ?? 'admin_fr@gmail.com',
+    password: process.env.SEED_ADMIN_FR_PASSWORD ?? 'admin123',
+    name: process.env.SEED_ADMIN_FR_NAME ?? 'Admin FR',
+    preferredLang: 'fr'
+  });
 }
 
 async function main() {
-  await seedConfig();
-  await seedRules();
-  await seedListings();
-  await seedAdmin();
+  const agencyId = await seedDefaultAgency();
+  await seedConfig(agencyId);
+  await seedRules(agencyId);
+  await seedListings(agencyId);
+  await seedAdmins(agencyId);
   console.log('Seed complete.');
   process.exit(0);
 }

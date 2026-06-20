@@ -9,12 +9,10 @@ import { addPendingConversationId } from '@/components/chat/pending-conversation
 import { useLang } from '@/components/lang-provider';
 import { formatSlot } from '@/lib/format';
 
-type ToolCall = { toolName?: string };
 type ChatMessage = {
   id: string;
   role: string;
   content: string;
-  tool_calls?: ToolCall[] | null;
 };
 type Snapshot = {
   mode: string | null;
@@ -50,18 +48,32 @@ export function ChatPanel({
   const { t, lang } = useLang();
 
   useEffect(() => {
-    if (!initialConversationId) return;
-    setConversationId(initialConversationId);
-    setLoading(true);
-    fetch(`/api/chat?conversationId=${initialConversationId}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!data) return;
-        setMessages(data.messages ?? []);
-        setMode(data.conversation?.mode ?? null);
-        setViewing(data.viewing ?? null);
-      })
-      .finally(() => setLoading(false));
+    if (initialConversationId) {
+      // Explicit conversation (e.g. threads page) — load directly.
+      setConversationId(initialConversationId);
+      setLoading(true);
+      fetch(`/api/chat?conversationId=${initialConversationId}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data) return;
+          setMessages(data.messages ?? []);
+          setMode(data.conversation?.mode ?? null);
+          setViewing(data.viewing ?? null);
+        })
+        .finally(() => setLoading(false));
+    } else {
+      // Anonymous listing page — try to restore from guest cookie via server.
+      fetch(`/api/chat?listingId=${encodeURIComponent(listingId)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data?.conversation?.id) return;
+          setConversationId(data.conversation.id);
+          setMessages(data.messages ?? []);
+          setMode(data.conversation?.mode ?? null);
+          setViewing(data.viewing ?? null);
+        });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConversationId]);
 
   useEffect(() => {
@@ -103,12 +115,13 @@ export function ChatPanel({
         setConversationId(data.conversationId);
         if (trackForClaim) addPendingConversationId(data.conversationId);
       }
-      if (data.reply) {
-        setMessages((m) => [
-          ...m,
-          { id: `a-${Date.now()}`, role: 'assistant', content: data.reply }
-        ]);
-      } else if (data.error) {
+      // Treat the POST response as the authoritative final snapshot. SSE remains
+      // useful for updates from other channels, but can miss an event across
+      // reconnects or auth-cookie transitions after anonymous promotion.
+      if (data.messages) setMessages(data.messages);
+      if (data.conversation) setMode(data.conversation.mode ?? null);
+      if ('viewing' in data) setViewing(data.viewing ?? null);
+      if (data.error) {
         setMessages((m) => [
           ...m,
           {
@@ -151,11 +164,6 @@ export function ChatPanel({
           );
           return messages.map((m, i) => (
             <div key={m.id}>
-              {Array.isArray(m.tool_calls) && m.tool_calls.length > 0 && (
-                <p className="mb-1.5 text-center text-[11px] text-muted-foreground">
-                  {m.tool_calls.map((tc) => tc.toolName).filter(Boolean).join(', ')}
-                </p>
-              )}
               {m.content && <ChatBubble role={m.role} content={m.content} />}
               {viewing && i === lastAssistantIdx && (
                 <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">

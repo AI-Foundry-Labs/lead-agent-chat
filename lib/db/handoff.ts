@@ -1,10 +1,11 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { db, handoff_rules } from './client';
 import type { HandoffRule } from '@/lib/types';
 
 function rowToRule(r: typeof handoff_rules.$inferSelect): HandoffRule {
   return {
     id: r.id,
+    agency_id: r.agency_id,
     description: r.description,
     trigger_keywords: r.trigger_keywords,
     active: r.active,
@@ -12,30 +13,43 @@ function rowToRule(r: typeof handoff_rules.$inferSelect): HandoffRule {
   };
 }
 
-export async function listHandoffRules(): Promise<HandoffRule[]> {
+export async function listHandoffRules(agencyId: string): Promise<HandoffRule[]> {
   const rows = await db
     .select()
     .from(handoff_rules)
+    .where(eq(handoff_rules.agency_id, agencyId))
     .orderBy(desc(handoff_rules.created_at));
   return rows.map(rowToRule);
 }
 
-export async function listActiveHandoffRules(): Promise<HandoffRule[]> {
+export async function listActiveHandoffRules(agencyId: string): Promise<HandoffRule[]> {
   const rows = await db
     .select()
     .from(handoff_rules)
-    .where(eq(handoff_rules.active, true))
+    .where(
+      and(
+        eq(handoff_rules.agency_id, agencyId),
+        eq(handoff_rules.active, true)
+      )
+    )
     .orderBy(desc(handoff_rules.created_at));
   return rows.map(rowToRule);
+}
+
+export async function getHandoffRule(id: string): Promise<HandoffRule | null> {
+  const rows = await db.select().from(handoff_rules).where(eq(handoff_rules.id, id)).limit(1);
+  return rows[0] ? rowToRule(rows[0]) : null;
 }
 
 export async function createHandoffRule(input: {
+  agency_id: string;
   description: string;
   trigger_keywords: string[];
 }): Promise<HandoffRule> {
   const [r] = await db
     .insert(handoff_rules)
     .values({
+      agency_id: input.agency_id,
       description: input.description,
       trigger_keywords: input.trigger_keywords
     })

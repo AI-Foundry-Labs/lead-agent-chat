@@ -11,12 +11,15 @@ import type { Conversation } from '../../../lib/types.ts';
 function makeConv(overrides: Partial<Conversation> = {}): Conversation {
   return {
     id: 'aaaabbbb-cccc-dddd-eeee-ffffffffffff',
+    agency_id: 'agency-1',
     type: 'lead',
     mode: 'agent',
     primary_channel: 'web',
     lead_id: 'lead-1',
+    admin_id: null,
     listing_id: 'lst-1',
     thread_summary: null,
+    summarized_turn_count: 0,
     created_at: new Date(),
     updated_at: new Date(),
     ...overrides

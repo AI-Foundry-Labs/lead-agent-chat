@@ -19,6 +19,7 @@ COPY --from=deps /app/node_modules /migrate/node_modules
 COPY package.json drizzle.config.ts tsconfig.json /migrate/
 COPY lib /migrate/lib
 COPY scripts /migrate/scripts
+COPY drizzle /migrate/drizzle
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
@@ -53,6 +54,7 @@ COPY --from=builder /app/drizzle.config.ts /migrate/drizzle.config.ts
 COPY --from=builder /app/tsconfig.json /migrate/tsconfig.json
 COPY --from=builder /app/lib /migrate/lib
 COPY --from=builder /app/scripts /migrate/scripts
+COPY --from=builder /app/drizzle /migrate/drizzle
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \

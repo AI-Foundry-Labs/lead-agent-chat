@@ -14,10 +14,15 @@ export class ConversationAccessError extends Error {
 /** Listing quick chat: anonymous OK; owned threads require matching session. */
 export async function assertLeadChatAccess(
   conversationId: string,
-  leadId: string | null
+  leadId: string | null,
+  agencyId: string
 ): Promise<Conversation> {
   const conv = await getConversation(conversationId);
   if (!conv || conv.type !== 'lead') {
+    throw new ConversationAccessError(404, 'not_found');
+  }
+  // Tenant isolation: reject cross-agency access.
+  if (conv.agency_id !== agencyId) {
     throw new ConversationAccessError(404, 'not_found');
   }
   if (conv.lead_id && conv.lead_id !== leadId) {

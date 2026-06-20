@@ -8,18 +8,15 @@ interface LeadMemoryPanelProps {
   longTermMemory?: string | null;
 }
 
-/**
- * Collapsible lead profile + long-term memory.
- * Collapsed by default so it never eats vertical space above the chat thread —
- * the operator expands it on demand.
- */
+/** Collapsible lead profile + long-term memory. */
 export function LeadMemoryPanel({ qualValues, longTermMemory }: LeadMemoryPanelProps) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
 
   const hasQual = qualValues && Object.keys(qualValues).length > 0;
   const memory = longTermMemory?.trim();
-  if (!hasQual && !memory) return null;
+  const hasContent = hasQual || memory;
+  if (!hasContent) return null;
 
   return (
     <div className="border-b border-border/80 bg-muted/20 text-xs">
@@ -32,7 +29,7 @@ export function LeadMemoryPanel({ qualValues, longTermMemory }: LeadMemoryPanelP
         <span className="text-muted-foreground">{open ? '▲' : '▼'}</span>
       </button>
       {open && (
-        <div className="max-h-64 space-y-2 overflow-y-auto px-4 pb-3 pt-1">
+        <div className="max-h-80 space-y-3 overflow-y-auto px-4 pb-3 pt-1">
           {hasQual && (
             <div>
               <span className="font-medium">{t.conv_qual}: </span>

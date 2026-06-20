@@ -1,9 +1,35 @@
 // Minimal shape we read from a Telegram update — shared by the webhook route and
 // the local long-polling dev runner so the behaviour is identical.
 export interface TelegramUpdate {
-  message?: {
-    text?: string;
+  // Unique monotonic ID — used for idempotency deduplication.
+  update_id?: number;
+  // Inline-keyboard button taps arrive here instead of message.
+  callback_query?: {
+    id?: string;
+    data?: string;
     from?: { id?: number | string };
-    chat?: { id?: number | string };
+    message?: {
+      chat?: { id?: number | string };
+      message_thread_id?: number;
+    };
+  };
+  message?: {
+    // Per-chat message id — used to react to / reply to a specific message.
+    message_id?: number;
+    text?: string;
+    // Thread id when the message belongs to a forum topic.
+    message_thread_id?: number;
+    from?: {
+      id?: number | string;
+      // true when the sender is a bot (e.g. the bot's own mirror posts).
+      is_bot?: boolean;
+    };
+    chat?: {
+      id?: number | string;
+      // 'private' | 'group' | 'supergroup' | 'channel'
+      type?: string;
+      // true when the supergroup has Topics (forum mode) enabled
+      is_forum?: boolean;
+    };
   };
 }

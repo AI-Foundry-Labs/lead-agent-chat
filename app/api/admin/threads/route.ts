@@ -14,14 +14,14 @@ export const runtime = 'nodejs';
 /** Thread-centric reporting for admin — list or detail one visitor thread. */
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const leadId = req.nextUrl.searchParams.get('lead_id');
     const scope = req.nextUrl.searchParams.get('scope');
     const conversationId = req.nextUrl.searchParams.get('conversation_id');
 
     if (conversationId) {
       const conv = await getConversation(conversationId);
-      if (!conv || conv.type !== 'lead') {
+      if (!conv || conv.type !== 'lead' || conv.agency_id !== admin.agency_id) {
         return Response.json({ error: 'not_found' }, { status: 404 });
       }
       const lead = conv.lead_id ? await getLeadById(conv.lead_id) : null;
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (scope === 'anonymous') {
-      const threads = await listAnonymousVisitorThreads();
+      const threads = await listAnonymousVisitorThreads(admin.agency_id);
       const enriched = await Promise.all(
         threads.map(async (t) => {
           const listing = t.listing_id ? await getListing(t.listing_id) : null;
@@ -78,7 +78,9 @@ export async function GET(req: NextRequest) {
     }
 
     const lead = await getLeadById(leadId);
-    if (!lead) return Response.json({ error: 'not_found' }, { status: 404 });
+    if (!lead || lead.agency_id !== admin.agency_id) {
+      return Response.json({ error: 'not_found' }, { status: 404 });
+    }
 
     const threads = await listConversationsByLeadId(leadId);
     const enriched = await Promise.all(

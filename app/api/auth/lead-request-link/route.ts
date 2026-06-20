@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { promises as dns } from 'node:dns';
 import { getLeadByEmail, createLead } from '@/lib/db';
+import { getOrCreateLeadTopics } from '@/lib/telegram/lead-topics';
 import { createMagicLink, destroyLeadSession } from '@/lib/auth';
 import { sendEmail, buildMagicLinkEmail } from '@/lib/email';
+import { getDefaultAgency } from '@/lib/db/agencies';
 
 export const runtime = 'nodejs';
 
@@ -48,8 +50,23 @@ export async function POST(request: Request) {
     return Response.json({ error: 'invalid_email' }, { status: 400 });
   }
 
-  let lead = await getLeadByEmail(email);
-  if (!lead) lead = await createLead({ channel: 'web', email });
+  // Resolve agency from Host header (set by middleware); fall back to default.
+  const agencyId =
+    request.headers.get('x-agency-id') ??
+    (await getDefaultAgency())?.id;
+  if (!agencyId) {
+    return Response.json({ error: 'agency_not_configured' }, { status: 503 });
+  }
+
+  let lead = await getLeadByEmail(email, agencyId);
+  if (!lead) {
+    lead = await createLead({ agency_id: agencyId, channel: 'web', email });
+    // Provision Telegram topics for the new lead (off response path).
+    const newLeadId = lead.id;
+    void getOrCreateLeadTopics(agencyId, newLeadId).catch((err) =>
+      console.error('[lead-request-link] getOrCreateLeadTopics failed', newLeadId, err)
+    );
+  }
 
   const url = await createMagicLink(lead.id, email);
   const { subject, text, html } = buildMagicLinkEmail({ name: lead.name, url, lang });

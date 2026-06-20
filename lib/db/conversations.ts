@@ -10,6 +10,7 @@ import type {
 function rowToConversation(r: typeof conversations.$inferSelect): Conversation {
   return {
     id: r.id,
+    agency_id: r.agency_id,
     type: r.type as ConversationType,
     lead_id: r.lead_id,
     admin_id: r.admin_id,
@@ -24,6 +25,7 @@ function rowToConversation(r: typeof conversations.$inferSelect): Conversation {
 }
 
 export async function createConversation(input: {
+  agency_id: string;
   type: ConversationType;
   lead_id?: string | null;
   admin_id?: string | null;
@@ -33,6 +35,7 @@ export async function createConversation(input: {
   const [r] = await db
     .insert(conversations)
     .values({
+      agency_id: input.agency_id,
       type: input.type,
       lead_id: input.lead_id ?? null,
       admin_id: input.admin_id ?? null,
@@ -83,12 +86,15 @@ export async function listConversationsByLeadId(
 /** Attach anonymous listing chats to a logged-in lead after sign-in. */
 export async function claimConversationsForLead(
   leadId: string,
-  conversationIds: string[]
+  conversationIds: string[],
+  agencyId: string
 ): Promise<string[]> {
   const claimed: string[] = [];
   for (const id of conversationIds) {
     const conv = await getConversation(id);
+    // Skip if wrong agency, already claimed, or not a lead thread.
     if (!conv || conv.type !== 'lead' || conv.lead_id) continue;
+    if (conv.agency_id !== agencyId) continue;
     await updateConversation(id, { lead_id: leadId });
     claimed.push(id);
   }
@@ -113,11 +119,13 @@ export async function getMainAssistantConversation(
 }
 
 export async function getOrCreateMainAssistant(
-  adminId: string
+  adminId: string,
+  agencyId: string
 ): Promise<Conversation> {
   return (
     (await getMainAssistantConversation(adminId)) ??
     (await createConversation({
+      agency_id: agencyId,
       type: 'main_assistant',
       admin_id: adminId,
       primary_channel: 'web'
@@ -150,6 +158,7 @@ export async function getLeadConversationByChannel(
 }
 
 export async function getOrCreateLeadTelegramConversation(input: {
+  agencyId: string;
   leadId: string;
   listingId: string | null;
 }): Promise<Conversation> {
@@ -160,6 +169,7 @@ export async function getOrCreateLeadTelegramConversation(input: {
       'telegram'
     )) ??
     (await createConversation({
+      agency_id: input.agencyId,
       type: 'lead',
       lead_id: input.leadId,
       listing_id: input.listingId,
@@ -201,10 +211,14 @@ export async function getLeadOperatorConversation(
   return rows[0] ? rowToConversation(rows[0]) : null;
 }
 
-export async function getOrCreateLeadOperator(leadId: string): Promise<Conversation> {
+export async function getOrCreateLeadOperator(
+  leadId: string,
+  agencyId: string
+): Promise<Conversation> {
   return (
     (await getLeadOperatorConversation(leadId)) ??
     (await createConversation({
+      agency_id: agencyId,
       type: 'operator',
       lead_id: leadId,
       primary_channel: 'web'
@@ -213,19 +227,30 @@ export async function getOrCreateLeadOperator(leadId: string): Promise<Conversat
 }
 
 /** Singleton operator for the anonymous / unidentified visitor pool (lead_id IS NULL). */
-export async function getAnonymousOperatorConversation(): Promise<Conversation | null> {
+export async function getAnonymousOperatorConversation(
+  agencyId: string
+): Promise<Conversation | null> {
   const rows = await db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.type, 'operator'), isNull(conversations.lead_id)))
+    .where(
+      and(
+        eq(conversations.agency_id, agencyId),
+        eq(conversations.type, 'operator'),
+        isNull(conversations.lead_id)
+      )
+    )
     .limit(1);
   return rows[0] ? rowToConversation(rows[0]) : null;
 }
 
-export async function getOrCreateAnonymousOperator(): Promise<Conversation> {
+export async function getOrCreateAnonymousOperator(
+  agencyId: string
+): Promise<Conversation> {
   return (
-    (await getAnonymousOperatorConversation()) ??
+    (await getAnonymousOperatorConversation(agencyId)) ??
     (await createConversation({
+      agency_id: agencyId,
       type: 'operator',
       primary_channel: 'web'
     }))
@@ -233,13 +258,16 @@ export async function getOrCreateAnonymousOperator(): Promise<Conversation> {
 }
 
 /** Visitor-facing threads for anonymous pool (no email/name on lead, or no lead yet). */
-export async function listAnonymousVisitorThreads(): Promise<Conversation[]> {
+export async function listAnonymousVisitorThreads(
+  agencyId: string
+): Promise<Conversation[]> {
   const rows = await db
     .select({ conv: conversations })
     .from(conversations)
     .leftJoin(leads, eq(conversations.lead_id, leads.id))
     .where(
       and(
+        eq(conversations.agency_id, agencyId),
         eq(conversations.type, 'lead'),
         or(
           isNull(conversations.lead_id),
@@ -258,6 +286,24 @@ export async function getConversationByIdForLead(
   const conv = await getConversation(conversationId);
   if (!conv || conv.type !== 'lead' || conv.lead_id !== leadId) return null;
   return conv;
+}
+
+/**
+ * Atomically attach a lead to a conversation ONLY if it's still anonymous.
+ * Returns the updated conversation if this call won the race, or null if the
+ * conversation already had a lead_id (a concurrent turn attached one first).
+ * Single conditional UPDATE → closes the promote-anonymous-visitor TOCTOU window.
+ */
+export async function attachLeadIfAnonymous(
+  conversationId: string,
+  leadId: string
+): Promise<Conversation | null> {
+  const [r] = await db
+    .update(conversations)
+    .set({ lead_id: leadId, updated_at: new Date() })
+    .where(and(eq(conversations.id, conversationId), isNull(conversations.lead_id)))
+    .returning();
+  return r ? rowToConversation(r) : null;
 }
 
 export async function updateConversation(
@@ -284,4 +330,12 @@ export async function touchConversation(id: string): Promise<void> {
     .update(conversations)
     .set({ updated_at: new Date() })
     .where(eq(conversations.id, id));
+}
+
+/**
+ * Hard-delete all conversations for a lead (used before deleteLead to avoid orphan rows).
+ * Cascades to messages and viewing_slots that reference conversation_id with onDelete cascade.
+ */
+export async function deleteConversationsByLeadId(leadId: string): Promise<void> {
+  await db.delete(conversations).where(eq(conversations.lead_id, leadId));
 }

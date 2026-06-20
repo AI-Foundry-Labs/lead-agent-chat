@@ -14,14 +14,18 @@ import {
   consumeTelegramLinkToken,
   createLeadTelegramLinkToken,
   consumeLeadTelegramLinkToken,
+  createAgencyTelegramLinkToken,
+  consumeAgencyTelegramLinkToken,
   type LeadTelegramLinkPayload
 } from '@/lib/db';
 
 export const ADMIN_COOKIE = 'admin_session';
 export const LEAD_COOKIE = 'lead_session';
+export const GUEST_CONV_COOKIE = 'guest_convs';
 
 const ADMIN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LEAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const GUEST_CONV_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAGIC_TTL_MS = 15 * 60 * 1000;
 const TELEGRAM_LINK_TTL_MS = 10 * 60 * 1000;
 const LEAD_TELEGRAM_LINK_TTL_MS = 24 * 60 * 60 * 1000;
@@ -45,7 +49,7 @@ function sha256(s: string): string {
   return crypto.createHash('sha256').update(s).digest('hex');
 }
 
-export type AdminInfo = { id: string; email: string; name: string | null };
+export type AdminInfo = { id: string; email: string; name: string | null; agency_id: string; persona: string | null };
 
 export async function createAdminSession(
   adminId: string,
@@ -75,7 +79,7 @@ export async function getAdminFromCookies(): Promise<AdminInfo | null> {
   const token = jar.get(ADMIN_COOKIE)?.value;
   if (!token) return null;
   const rows = await db
-    .select({ id: admins.id, email: admins.email, name: admins.name })
+    .select({ id: admins.id, email: admins.email, name: admins.name, agency_id: admins.agency_id, persona: admins.persona })
     .from(admin_sessions)
     .innerJoin(admins, eq(admins.id, admin_sessions.admin_id))
     .where(
@@ -136,6 +140,46 @@ export async function getLeadIdFromCookies(): Promise<string | null> {
     )
     .limit(1);
   return rows[0]?.lead_id ?? null;
+}
+
+// ─── Guest conversation cookie (anonymous visitors) ────────────────────────
+// Stores a JSON map {listingId|"_": conversationId} so guests can resume
+// their conversations after a page refresh without logging in.
+// Cleared when the visitor is promoted to a named lead (setLeadCookie called).
+
+async function getGuestConvMap(): Promise<Record<string, string>> {
+  const jar = await cookies();
+  const raw = jar.get(GUEST_CONV_COOKIE)?.value;
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch { return {}; }
+}
+
+export async function setGuestConvCookie(
+  conversationId: string,
+  listingId: string | null
+): Promise<void> {
+  const key = listingId ?? '_';
+  const map = await getGuestConvMap();
+  map[key] = conversationId;
+  const jar = await cookies();
+  jar.set(GUEST_CONV_COOKIE, JSON.stringify(map), {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: GUEST_CONV_TTL_MS / 1000
+  });
+}
+
+export async function getGuestConvId(listingId: string | null): Promise<string | null> {
+  const key = listingId ?? '_';
+  const map = await getGuestConvMap();
+  return map[key] ?? null;
+}
+
+export async function clearGuestConvCookie(): Promise<void> {
+  const jar = await cookies();
+  jar.delete(GUEST_CONV_COOKIE);
 }
 
 export async function destroyLeadSession(): Promise<void> {
@@ -217,6 +261,26 @@ export async function consumeLeadTelegramLink(
   token: string
 ): Promise<LeadTelegramLinkPayload | null> {
   return consumeLeadTelegramLinkToken(sha256(token));
+}
+
+// ─── Agency Telegram group linking (admin sends /link <token> inside group) ─
+
+const AGENCY_TELEGRAM_LINK_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+/** Issue a single-use agency-scoped token for group binding. */
+export async function issueAgencyTelegramLinkToken(agencyId: string): Promise<string> {
+  const token = newToken();
+  await createAgencyTelegramLinkToken({
+    token_hash: sha256(token),
+    agency_id: agencyId,
+    expires_at: new Date(Date.now() + AGENCY_TELEGRAM_LINK_TTL_MS)
+  });
+  return token;
+}
+
+/** Consume the group link token; returns agency_id or null if invalid/expired. */
+export async function consumeAgencyTelegramLink(token: string): Promise<string | null> {
+  return consumeAgencyTelegramLinkToken(sha256(token));
 }
 
 export class AuthError extends Error {

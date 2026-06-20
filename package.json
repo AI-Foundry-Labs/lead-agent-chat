@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3300",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
@@ -15,11 +15,16 @@
     "test": "node --require tsx/cjs --test eval_harness/unit/*.test.ts",
     "test:agent": "node --require tsx/cjs --test eval_harness/agent/prompt-construction/*.test.ts eval_harness/agent/tool-behavior/*.test.ts eval_harness/agent/thread-pipeline/*.test.ts eval_harness/agent/memory/*.test.ts eval_harness/agent/rules/*.test.ts",
     "test:smoke": "node --require tsx/cjs --test eval_harness/smoke/*.test.ts",
-    "test:all": "bash eval_harness/run-tests.sh"
+    "test:all": "bash eval_harness/run-tests.sh",
+    "db:migrate": "tsx --env-file=.env scripts/migrate.ts",
+    "telegram:webhook": "tsx --env-file=.env scripts/set-webhook.ts",
+    "agency:onboard": "tsx --env-file=.env scripts/onboard-agency.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.84",
     "@ai-sdk/gateway": "^2.0.0",
     "@ai-sdk/google": "^3.0.80",
+    "@ai-sdk/openai": "^3.0.71",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-separator": "^1.1.7",

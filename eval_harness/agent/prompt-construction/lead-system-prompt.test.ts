@@ -14,6 +14,7 @@ import type { AgencyConfig, Lead, Listing } from '../../../lib/types.ts';
 
 const BASE_CONFIG: AgencyConfig = {
   id: 'cfg1',
+  agency_id: 'agency-1',
   name: 'Agence Lumière',
   tone: 'Professional and warm.',
   calendar_id: 'cal1',
@@ -26,6 +27,7 @@ const BASE_CONFIG: AgencyConfig = {
 
 const LISTING: Listing = {
   id: 'lst1',
+  agency_id: 'agency-1',
   title: 'Appartement 3 pièces — Le Marais',
   title_en: '3-room apartment — Le Marais',
   address: '14 rue de Bretagne, 75004 Paris',
@@ -48,6 +50,7 @@ const ANON_LEAD: Lead | null = null;
 
 const IDENTIFIED_LEAD: Lead = {
   id: 'l1',
+  agency_id: 'agency-1',
   channel: 'web',
   language: 'fr',
   email: 'tarik@example.com',
@@ -57,8 +60,10 @@ const IDENTIFIED_LEAD: Lead = {
   qual_values: { budget: '650k€' },
   score_reason: null,
   long_term_memory: null,
+  persona: null,
   listing_id: 'lst1',
   telegram_user_id: null,
+  anon_seq: null,
   created_at: new Date(),
   updated_at: new Date()
 };

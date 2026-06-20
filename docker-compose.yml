@@ -28,9 +28,12 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://lead_agent:lead_agent_dev@db:5432/lead_agent
-      RUN_DB_PUSH: "true"
+      RUN_DB_PUSH: "false"
+      RUN_DB_MIGRATE: "true"
       RUN_DB_SEED: "true"
       NEXT_TELEMETRY_DISABLED: "1"
+      # F4a: run the scheduled-message delivery loop in this (single) app instance.
+      RUN_SCHEDULER: "1"
     volumes:
       - .:/app
       - app_node_modules:/app/node_modules
@@ -56,6 +59,12 @@ services:
       DATABASE_URL: postgresql://lead_agent:lead_agent_dev@db:5432/lead_agent
       # Override so the poller forwards updates to the app container (not localhost)
       APP_BASE_URL: http://app:3000
+      # The poller must NOT touch the schema — the app container owns migrations.
+      # Without these, the entrypoint defaults to `drizzle-kit push --force`, which
+      # hangs on an interactive truncate prompt (no TTY) and the poller never starts.
+      RUN_DB_PUSH: "false"
+      RUN_DB_MIGRATE: "false"
+      RUN_DB_SEED: "false"
     volumes:
       - .:/app
       - app_node_modules:/app/node_modules

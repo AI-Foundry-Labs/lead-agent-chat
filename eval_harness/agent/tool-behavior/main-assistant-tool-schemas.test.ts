@@ -98,6 +98,37 @@ const updateConfigSchema = z.object({
 
 const mainNotifyAdminSchema = z.object({ summary: z.string().max(280) });
 
+// New admin tools added in viewing management update
+const adminRecordQualificationSchema = z.object({
+  lead_id: z.string(),
+  values: z.record(z.string(), z.string()),
+  potential_status: z.enum(['hot', 'warm', 'cold']),
+  reason: z.string().max(200)
+});
+
+const adminBookViewingSchema = z.object({
+  lead_id: z.string(),
+  listing_id: z.string().optional(),
+  slot_iso: z.string(),
+  contact_email: z.string().email().optional(),
+  contact_name: z.string().optional()
+});
+
+const adminRememberVisitorFactSchema = z.object({
+  lead_id: z.string(),
+  facts: z.array(z.string().max(800)).min(1).max(20)
+});
+
+const adminCancelViewingSchema = z.object({
+  viewing_id: z.string(),
+  reason: z.string().max(300).optional()
+});
+
+const adminRescheduleViewingSchema = z.object({
+  viewing_id: z.string(),
+  new_slot_iso: z.string()
+});
+
 // ── query_leads ───────────────────────────────────────────────────────────────
 
 describe('query_leads', () => {
@@ -401,6 +432,164 @@ describe('notify_admin (main assistant)', () => {
 
   it('rejects summary over 280 chars', () => {
     assert.ok(!mainNotifyAdminSchema.safeParse({ summary: 'x'.repeat(281) }).success);
+  });
+});
+
+// ── record_qualification (admin) ─────────────────────────────────────────────
+
+describe('record_qualification (admin)', () => {
+  it('requires lead_id (unlike operator version)', () => {
+    assert.ok(adminRecordQualificationSchema.safeParse({
+      lead_id: 'l1',
+      values: { budget: '700k€' },
+      potential_status: 'hot',
+      reason: 'Called and confirmed high intent'
+    }).success);
+  });
+
+  it('rejects missing lead_id', () => {
+    assert.ok(!adminRecordQualificationSchema.safeParse({
+      values: { budget: '700k€' },
+      potential_status: 'hot',
+      reason: 'test'
+    }).success, 'lead_id is required for admin version');
+  });
+
+  it('accepts empty values dict (partial update)', () => {
+    assert.ok(adminRecordQualificationSchema.safeParse({
+      lead_id: 'l1',
+      values: {},
+      potential_status: 'warm',
+      reason: 'First contact'
+    }).success);
+  });
+
+  it('rejects reason over 200 chars', () => {
+    assert.ok(!adminRecordQualificationSchema.safeParse({
+      lead_id: 'l1',
+      values: {},
+      potential_status: 'cold',
+      reason: 'x'.repeat(201)
+    }).success);
+  });
+
+  it('rejects unknown potential_status', () => {
+    assert.ok(!adminRecordQualificationSchema.safeParse({
+      lead_id: 'l1',
+      values: {},
+      potential_status: 'very-hot',
+      reason: 'test'
+    }).success);
+  });
+});
+
+// ── book_viewing (admin) ──────────────────────────────────────────────────────
+
+describe('book_viewing (admin)', () => {
+  it('accepts lead_id + slot_iso (minimum required fields)', () => {
+    assert.ok(adminBookViewingSchema.safeParse({
+      lead_id: 'l1',
+      slot_iso: '2026-06-20T08:00:00.000Z'
+    }).success);
+  });
+
+  it('accepts all optional fields', () => {
+    assert.ok(adminBookViewingSchema.safeParse({
+      lead_id: 'l1',
+      listing_id: 'lst-1',
+      slot_iso: '2026-06-20T08:00:00.000Z',
+      contact_email: 'tarik@example.com',
+      contact_name: 'Tarik'
+    }).success);
+  });
+
+  it('rejects missing lead_id', () => {
+    assert.ok(!adminBookViewingSchema.safeParse({
+      slot_iso: '2026-06-20T08:00:00.000Z'
+    }).success);
+  });
+
+  it('rejects missing slot_iso', () => {
+    assert.ok(!adminBookViewingSchema.safeParse({ lead_id: 'l1' }).success);
+  });
+
+  it('rejects malformed contact_email', () => {
+    assert.ok(!adminBookViewingSchema.safeParse({
+      lead_id: 'l1',
+      slot_iso: '2026-06-20T08:00:00.000Z',
+      contact_email: 'not-an-email'
+    }).success);
+  });
+});
+
+// ── remember_visitor_fact (admin) ─────────────────────────────────────────────
+
+describe('remember_visitor_fact (admin)', () => {
+  it('requires lead_id (unlike lead-side which uses session context)', () => {
+    assert.ok(adminRememberVisitorFactSchema.safeParse({
+      lead_id: 'l1',
+      facts: ['Met in person — serious buyer', 'Budget confirmed: 750k€']
+    }).success);
+  });
+
+  it('rejects missing lead_id', () => {
+    assert.ok(!adminRememberVisitorFactSchema.safeParse({
+      facts: ['Some fact']
+    }).success, 'lead_id is required for admin version');
+  });
+
+  it('rejects empty facts array', () => {
+    assert.ok(!adminRememberVisitorFactSchema.safeParse({ lead_id: 'l1', facts: [] }).success);
+  });
+
+  it('rejects more than 20 facts', () => {
+    assert.ok(!adminRememberVisitorFactSchema.safeParse({
+      lead_id: 'l1',
+      facts: Array.from({ length: 21 }, (_, i) => `fact ${i}`)
+    }).success);
+  });
+
+  it('rejects a fact over 800 chars', () => {
+    assert.ok(!adminRememberVisitorFactSchema.safeParse({
+      lead_id: 'l1',
+      facts: ['x'.repeat(801)]
+    }).success);
+  });
+});
+
+// ── cancel_viewing (admin) ────────────────────────────────────────────────────
+
+describe('cancel_viewing (admin)', () => {
+  it('accepts viewing_id with optional reason', () => {
+    assert.ok(adminCancelViewingSchema.safeParse({ viewing_id: 'v1', reason: 'Lead cancelled by phone' }).success);
+    assert.ok(adminCancelViewingSchema.safeParse({ viewing_id: 'v1' }).success);
+  });
+
+  it('rejects missing viewing_id', () => {
+    assert.ok(!adminCancelViewingSchema.safeParse({ reason: 'test' }).success);
+  });
+
+  it('rejects reason over 300 chars', () => {
+    assert.ok(!adminCancelViewingSchema.safeParse({ viewing_id: 'v1', reason: 'x'.repeat(301) }).success);
+  });
+});
+
+// ── reschedule_viewing (admin) ────────────────────────────────────────────────
+
+describe('reschedule_viewing (admin)', () => {
+  it('accepts viewing_id + new_slot_iso', () => {
+    assert.ok(adminRescheduleViewingSchema.safeParse({
+      viewing_id: 'v1',
+      new_slot_iso: '2026-06-25T10:00:00.000Z'
+    }).success);
+  });
+
+  it('rejects missing new_slot_iso', () => {
+    assert.ok(!adminRescheduleViewingSchema.safeParse({ viewing_id: 'v1' }).success);
+  });
+
+  it('rejects missing viewing_id', () => {
+    assert.ok(!adminRescheduleViewingSchema.safeParse({ new_slot_iso: '2026-06-25T10:00:00.000Z' }).success);
   });
 });
 

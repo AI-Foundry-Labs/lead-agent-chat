@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLang } from '@/components/lang-provider';
+import { LangToggle } from '@/components/lang-toggle';
 import { Button } from '@/components/ui/button';
 import { AdminTabNav } from '@/components/admin/admin-tab-nav';
 import { AgentsPanel } from '@/components/admin/agents-panel';
@@ -14,6 +15,7 @@ import { AssistantPanel } from '@/components/admin/assistant-panel';
 import type { AdminData } from '@/components/admin/admin-types';
 
 type Tab = 'agents' | 'dashboard' | 'conversations' | 'listings' | 'config' | 'assistant';
+type LinkInfo = { deepLink: string | null; command: string };
 
 export function AdminShell() {
   const { t } = useLang();
@@ -22,6 +24,7 @@ export function AdminShell() {
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [linkInfo, setLinkInfo] = useState<LinkInfo | null>(null);
 
   const refetch = useCallback(async () => {
     setLoading(true);
@@ -46,10 +49,43 @@ export function AdminShell() {
     void refetch();
   }, [refetch]);
 
+  // SSE: subscribe to agency-data-changed events so the dashboard auto-updates
+  // when the agent mutates config / listings / handoff rules.
+  useEffect(() => {
+    const es = new EventSource('/api/admin/stream-agency');
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    es.onmessage = (e) => {
+      try {
+        const payload = JSON.parse(e.data as string) as { type: string };
+        if (payload.type !== 'agency-data') return;
+      } catch {
+        return;
+      }
+      // Debounce: coalesce rapid bursts (e.g. bulk mutations) into a single refetch
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => { void refetch(); }, 500);
+    };
+    es.onerror = () => es.close();
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      es.close();
+    };
+  }, [refetch]);
+
   async function logout() {
     await fetch('/api/auth/admin/logout', { method: 'POST' });
     router.push('/admin/login');
     router.refresh();
+  }
+
+  // Telegram group linking — lives in the header so it's reachable from any tab.
+  async function linkTelegram() {
+    if (linkInfo) { setLinkInfo(null); return; }
+    const res = await fetch('/api/admin/link-telegram', { method: 'POST' });
+    const d = await res.json();
+    setLinkInfo({ deepLink: d.deep_link ?? null, command: d.command ?? '' });
   }
 
   const tabs: { key: Tab; label: string }[] = [
@@ -65,10 +101,32 @@ export function AdminShell() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <AdminTabNav tabs={tabs} active={tab} onChange={setTab} />
-        <Button variant="outline" size="sm" onClick={() => void logout()}>
-          {t.logout}
-        </Button>
+        <div className="flex items-center gap-2">
+          <LangToggle />
+          <Button variant="outline" size="sm" onClick={() => void linkTelegram()}>
+            {t.link_telegram}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void logout()}>
+            {t.logout}
+          </Button>
+        </div>
       </div>
+
+      {linkInfo && (
+        <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
+          {linkInfo.deepLink && (
+            <a
+              href={linkInfo.deepLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-blue-600 underline hover:text-blue-800"
+            >
+              Open Telegram →
+            </a>
+          )}
+          <span>{t.link_info} <code>{linkInfo.command}</code></span>
+        </div>
+      )}
 
       {error && (
         <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

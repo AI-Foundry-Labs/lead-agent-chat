@@ -11,6 +11,7 @@ import { notifyAdmins } from '@/lib/notify';
 import { formatSlot } from '@/lib/format';
 import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
 import { cancelViewingWithMemory, rescheduleViewingWithMemory } from '@/lib/agent/viewing-actions';
+import { pushAgentNotification } from '@/lib/agent/push-agent-notification';
 import type { AgentContext } from './context';
 
 export function buildOperatorLeadActions(ctx: AgentContext, scopedLeadId: string | null) {
@@ -119,13 +120,13 @@ export function buildOperatorLeadActions(ctx: AgentContext, scopedLeadId: string
       execute: async ({ lead_id }) => {
         const id = resolveLeadId(lead_id);
         if (!id) return { error: 'no_lead_in_scope' };
-        const all = await listBookedViewings();
+        const all = await listBookedViewings(ctx.config.agency_id);
         return all
           .filter((v) => v.lead_id === id)
           .map((v) => ({
             id: v.id,
             listing_id: v.listing_id,
-            slot: v.confirmed_slot ? formatSlot(v.confirmed_slot.toString()) : null,
+            slot: v.confirmed_slot ? formatSlot(v.confirmed_slot.toISOString()) : null,
             status: v.status,
             calendar_event_id: v.calendar_event_id
           }));
@@ -164,7 +165,12 @@ export function buildOperatorLeadActions(ctx: AgentContext, scopedLeadId: string
         if (isIdentifiedLead(lead)) {
           await updateLead(id, { status: 'handoff' });
         }
-        await notifyAdmins(`[Handoff requested] ${reason}`);
+        void pushAgentNotification({
+          agencyId: ctx.config.agency_id,
+          leadId: id,
+          event: { kind: 'handoff_requested', reason, leadName: lead?.name },
+          lang: ctx.lang
+        });
         const date = new Date().toISOString().slice(0, 10);
         scheduleAppendLeadLongTermFacts(id, [`ADMIN ACTION — ${date}: handoff requested — ${reason}`]);
         return { ok: true, handed_off: true };

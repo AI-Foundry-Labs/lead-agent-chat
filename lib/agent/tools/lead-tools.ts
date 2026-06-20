@@ -6,16 +6,23 @@ import {
   updateLead,
   updateConversation,
   findBookedSlot,
-  createBookedViewing
+  createBookedViewing,
+  listViewingsByConversation,
+  getViewingById,
+  getLeadById
 } from '@/lib/db';
-import { getAvailableSlots, createCalendarEvent } from '@/lib/calendar';
-import { notifyAdmins, notifyAdminsInChat } from '@/lib/notify';
+import { getAvailableSlots, createCalendarEvent, resolveSlotIso } from '@/lib/calendar';
+import { notifyAdmins } from '@/lib/notify';
 import { formatPrice, formatSlot } from '@/lib/format';
 import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
 import { formatConversationForMemory } from '@/lib/agent/cross-thread-context';
 import { issueLeadTelegramLinkToken } from '@/lib/auth';
 import { buildLeadTelegramLinkInfo } from '@/lib/telegram/build-lead-telegram-link';
 import { telegramConfigured } from '@/lib/telegram';
+import { cancelViewingWithMemory, rescheduleViewingWithMemory } from '@/lib/agent/viewing-actions';
+import { syncLeadStatusToTelegram } from '@/lib/telegram/lead-status-marker';
+import { syncLeadTopicTitles } from '@/lib/telegram/sync-lead-topic-titles';
+import { pushAgentNotification } from '@/lib/agent/push-agent-notification';
 import type { AgentContext } from './context';
 import { ensureLead } from './context';
 
@@ -55,7 +62,7 @@ export function buildLeadTools(ctx: AgentContext) {
         query: z.string().optional()
       }),
       execute: async ({ max_price, min_rooms, query }) => {
-        const all = await listListings();
+        const all = await listListings(ctx.config.agency_id);
         const q = query?.toLowerCase();
         const matches = all.filter((l) => {
           if (max_price && l.price > max_price) return false;
@@ -87,6 +94,7 @@ export function buildLeadTools(ctx: AgentContext) {
       }),
       execute: async ({ values, potential_status, reason }) => {
         const lead = await ensureLead(ctx);
+        const prevPotential = lead.potential_status;
         const merged = { ...lead.qual_values, ...values };
         const allKeys = ctx.config.qualification_criteria.map((c) => c.key);
         const complete = allKeys.every((k) => merged[k]);
@@ -97,6 +105,11 @@ export function buildLeadTools(ctx: AgentContext) {
           // Only promote to 'qualified' from 'active' — never downgrade booked/handoff/abandoned.
           status: complete && lead.status === 'active' ? 'qualified' : lead.status
         });
+
+        // Surface a hot/warm/cold change in the agency's Telegram topic (off-path, guarded).
+        void syncLeadStatusToTelegram(
+          ctx.config.agency_id, lead.id, prevPotential, potential_status, reason
+        ).catch((e) => console.error('[lead-tools] syncLeadStatusToTelegram failed:', e));
         scheduleAppendLeadLongTermFacts(
           lead.id,
           [
@@ -117,8 +130,8 @@ export function buildLeadTools(ctx: AgentContext) {
     get_available_slots: tool({
       description:
         'List candidate viewing slots for the property. ' +
-        'Returns each slot as { iso, label } where iso is the exact UTC timestamp to pass to book_viewing. ' +
-        'ALWAYS use the exact iso string from this response — never construct your own timestamp from the label.',
+        'Returns each slot as { iso, label } where iso is an opaque token to pass back to book_viewing. ' +
+        'ALWAYS copy the exact iso string from this response — never modify it, never construct your own timestamp from the label.',
       inputSchema: z.object({ count: z.number().int().min(1).max(5).optional() }),
       execute: async ({ count }) => {
         const listing = await getListing(listingId);
@@ -145,9 +158,16 @@ export function buildLeadTools(ctx: AgentContext) {
         contact_email: z.string().email().optional(),
         contact_name: z.string().optional()
       }),
-      execute: async ({ slot_iso, contact_email, contact_name }) => {
+      execute: async ({ slot_iso: rawSlotIso, contact_email, contact_name }) => {
         const listing = await getListing(listingId);
         if (!listing) return { error: 'no_listing_selected' };
+
+        // The model often corrupts the offered ISO (drops the Paris offset → +2h,
+        // and/or hallucinates the year). Snap it back to the real candidate slot
+        // by Paris wall-clock before doing anything with it.
+        const slot_iso = resolveSlotIso(rawSlotIso);
+        if (!slot_iso) return { error: 'invalid_slot' };
+
         const lead = await ensureLead(ctx);
         const email = contact_email ?? lead.email ?? undefined;
         if (!email) return { need_contact: true };
@@ -170,6 +190,7 @@ export function buildLeadTools(ctx: AgentContext) {
           details: `Potential: ${lead.potential_status ?? '—'}\n${details}`
         });
         await createBookedViewing({
+          agency_id: ctx.config.agency_id,
           conversation_id: ctx.conversation.id,
           lead_id: lead.id,
           listing_id: listing.id,
@@ -183,9 +204,19 @@ export function buildLeadTools(ctx: AgentContext) {
           name: contact_name ?? lead.name,
           status: 'booked'
         });
-        const bookingLabel = `[Viewing booked] ${listing.title} — ${formatSlot(slot_iso)} — ${contact_name ?? lead.name ?? email}`;
-        await notifyAdmins(bookingLabel);
-        await notifyAdminsInChat(`📅 Nouvelle visite confirmée\n\n**Bien :** ${listing.title}\n**Quand :** ${formatSlot(slot_iso)}\n**Contact :** ${contact_name ?? lead.name ?? email}`);
+        // A real name may now be known — re-sync both topic titles (off-path, guarded).
+        if (contact_name && contact_name !== lead.name) {
+          void syncLeadTopicTitles(ctx.config.agency_id, lead.id).catch((e) =>
+            console.error('[lead-tools] syncLeadTopicTitles failed:', e)
+          );
+        }
+        const contact = contact_name ?? lead.name ?? email;
+        void pushAgentNotification({
+          agencyId: ctx.config.agency_id,
+          leadId: lead.id,
+          event: { kind: 'viewing_booked', title: listing.title, slot: formatSlot(slot_iso), contact },
+          lang: ctx.lang
+        });
         scheduleAppendLeadLongTermFacts(lead.id, [
           `viewing booked: ${listing.title} (${listing.address}) on ${formatSlot(slot_iso)}`,
           `contact: ${contact_name ?? lead.name ?? '—'} <${email}>`,
@@ -210,8 +241,13 @@ export function buildLeadTools(ctx: AgentContext) {
         });
         if (ctx.conversation.lead_id) {
           await updateLead(ctx.conversation.lead_id, { status: 'handoff' });
+          void pushAgentNotification({
+            agencyId: ctx.config.agency_id,
+            leadId: ctx.conversation.lead_id,
+            event: { kind: 'handoff_requested', reason },
+            lang: ctx.lang
+          });
         }
-        await notifyAdmins(`[Handoff requested] ${reason}`);
         return { ok: true, handed_off: true };
       }
     }),
@@ -229,10 +265,19 @@ export function buildLeadTools(ctx: AgentContext) {
       }),
       execute: async ({ potential_status, status, memory_note }) => {
         const lead = await ensureLead(ctx);
+        const prevPotential = lead.potential_status;
         const updated = await updateLead(lead.id, {
           ...(potential_status !== undefined && { potential_status }),
           ...(status !== undefined && { status })
         });
+
+        // Surface a hot/warm/cold change in the agency's Telegram topic (off-path, guarded).
+        if (potential_status !== undefined) {
+          void syncLeadStatusToTelegram(
+            ctx.config.agency_id, lead.id, prevPotential, potential_status, memory_note
+          ).catch((e) => console.error('[lead-tools] syncLeadStatusToTelegram failed:', e));
+        }
+
         const date = new Date().toISOString().slice(0, 10);
         const parts = [
           status ? `status→${status}` : '',
@@ -298,6 +343,94 @@ export function buildLeadTools(ctx: AgentContext) {
         await notifyAdmins(summary);
         return { ok: true };
       }
-    })
+    }),
+
+    // ─── Viewing Management ─────────────────────────────────────────────────
+
+    get_lead_viewings: tool({
+      description: 'List all viewings booked in this conversation. Use when the visitor asks about their scheduled appointment.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        const viewings = await listViewingsByConversation(ctx.conversation.id);
+        return viewings.map((v) => ({
+          id: v.id,
+          listing_id: v.listing_id,
+          slot: v.confirmed_slot ? formatSlot(v.confirmed_slot.toISOString()) : null,
+          status: v.status,
+          contact_email: v.contact_email
+        }));
+      }
+    }),
+
+    cancel_viewing: tool({
+      description: 'Cancel a viewing booked in this conversation. Use only when the visitor explicitly requests cancellation.',
+      inputSchema: z.object({
+        viewing_id: z.string(),
+        reason: z.string().max(300).optional().describe('Reason for cancellation — stored in memory')
+      }),
+      execute: async ({ viewing_id, reason }) => {
+        // Ownership guard: only allow cancelling viewings from this conversation
+        const viewing = await getViewingById(viewing_id);
+        if (!viewing || viewing.conversation_id !== ctx.conversation.id) {
+          return { error: 'viewing_not_found' };
+        }
+        const result = await cancelViewingWithMemory(viewing_id, ctx.config.calendar_id, reason);
+        // Notify the agency (web agent tab + Telegram) that the lead cancelled.
+        if (!('error' in result) && viewing.lead_id) {
+          const listing = viewing.listing_id ? await getListing(viewing.listing_id) : null;
+          const lead = await getLeadById(viewing.lead_id);
+          void pushAgentNotification({
+            agencyId: ctx.config.agency_id,
+            leadId: viewing.lead_id,
+            event: {
+              kind: 'viewing_cancelled',
+              title: listing?.title ?? viewing.listing_id ?? '—',
+              slot: viewing.confirmed_slot ? formatSlot(viewing.confirmed_slot.toString()) : '—',
+              contact: lead?.name ?? viewing.contact_email ?? '—',
+              reason
+            },
+            lang: ctx.lang
+          });
+        }
+        return result;
+      }
+    }),
+
+    reschedule_viewing: tool({
+      description:
+        'Reschedule a viewing to a new slot. Call get_available_slots first to get valid iso values. ' +
+        'new_slot_iso MUST be the exact iso string from get_available_slots — never construct a timestamp manually.',
+      inputSchema: z.object({
+        viewing_id: z.string(),
+        new_slot_iso: z.string().describe('Exact iso from get_available_slots')
+      }),
+      execute: async ({ viewing_id, new_slot_iso }) => {
+        // Ownership guard: only allow rescheduling viewings from this conversation
+        const viewing = await getViewingById(viewing_id);
+        if (!viewing || viewing.conversation_id !== ctx.conversation.id) {
+          return { error: 'viewing_not_found' };
+        }
+        const oldSlot = viewing.confirmed_slot ? formatSlot(viewing.confirmed_slot.toString()) : '—';
+        const result = await rescheduleViewingWithMemory(viewing_id, new_slot_iso, ctx.config.calendar_id);
+        // Notify the agency (web agent tab + Telegram) that the lead rescheduled.
+        if (!('error' in result) && viewing.lead_id) {
+          const listing = viewing.listing_id ? await getListing(viewing.listing_id) : null;
+          const lead = await getLeadById(viewing.lead_id);
+          void pushAgentNotification({
+            agencyId: ctx.config.agency_id,
+            leadId: viewing.lead_id,
+            event: {
+              kind: 'viewing_rescheduled',
+              title: listing?.title ?? viewing.listing_id ?? '—',
+              oldSlot,
+              newSlot: result.new_slot,
+              contact: lead?.name ?? viewing.contact_email ?? '—'
+            },
+            lang: ctx.lang
+          });
+        }
+        return result;
+      }
+    }),
   };
 }

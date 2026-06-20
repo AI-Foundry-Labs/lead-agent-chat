@@ -4,13 +4,18 @@ import {
   assertLeadChatAccess,
   toConversationAccessResponse
 } from '@/lib/conversation-access';
+import { getDefaultAgency } from '@/lib/db/agencies';
 import { subscribeConversation } from '@/lib/events';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-async function buildSnapshot(conversationId: string, leadId: string | null) {
-  const conversation = await assertLeadChatAccess(conversationId, leadId);
+async function buildSnapshot(
+  conversationId: string,
+  leadId: string | null,
+  agencyId: string
+) {
+  const conversation = await assertLeadChatAccess(conversationId, leadId, agencyId);
   const [messages, viewing] = await Promise.all([
     getVisibleMessages(conversationId),
     getActiveViewing(conversationId)
@@ -39,8 +44,13 @@ export async function GET(request: Request) {
   if (!conversationId) return new Response('missing conversationId', { status: 400 });
 
   const leadId = await getLeadIdFromCookies();
+  const agencyId =
+    request.headers.get('x-agency-id') ??
+    (await getDefaultAgency())?.id;
+  if (!agencyId) return new Response('agency_not_configured', { status: 503 });
+
   try {
-    await assertLeadChatAccess(conversationId, leadId);
+    await assertLeadChatAccess(conversationId, leadId, agencyId);
   } catch (e) {
     const res = toConversationAccessResponse(e);
     if (res) return res;
@@ -54,7 +64,7 @@ export async function GET(request: Request) {
       const send = async () => {
         if (closed) return;
         try {
-          const snapshot = await buildSnapshot(conversationId, leadId);
+          const snapshot = await buildSnapshot(conversationId, leadId, agencyId);
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(snapshot)}\n\n`)
           );
