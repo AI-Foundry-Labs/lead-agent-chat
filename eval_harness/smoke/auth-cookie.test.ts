@@ -97,9 +97,9 @@ describe('Lead session cookie', () => {
 describe('Admin session', () => {
   it('admin routes reject requests without admin_session cookie', async () => {
     const paths = [
-      '/api/admin/leads',
-      '/api/admin/listings',
-      '/api/admin/viewings'
+      '/api/admin/data',
+      '/api/admin/threads',
+      '/api/admin/conversation'
     ];
     for (const path of paths) {
       const res = await get(path);
@@ -109,8 +109,9 @@ describe('Admin session', () => {
 
   it('POST admin actions reject without cookie', async () => {
     const actions = [
-      { path: '/api/admin/assistant/message', body: { message: 'test' } },
-      { path: '/api/admin/leads/update',      body: { leadId: 'x', updates: {} } }
+      { path: '/api/admin/assistant',     body: { message: 'test' } },
+      { path: '/api/admin/actions',       body: { kind: 'noop' } },
+      { path: '/api/admin/operator/chat', body: { leadId: 'x', message: 'hi' } }
     ];
     for (const { path, body } of actions) {
       const res = await post(path, body);

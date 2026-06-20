@@ -20,6 +20,8 @@ const EVENTS: StaffEvent[] = [
   { kind: 'handoff', rule: 'mot de la fin', message: 'je veux négocier le prix' },
   { kind: 'manual', message: 'bonjour, une question' },
   { kind: 'viewing_booked', title: 'Studio Montmartre', slot: 'lun. 10:00', contact: 'Duc <d@x.fr>' },
+  { kind: 'viewing_rescheduled', title: 'Studio Montmartre', oldSlot: 'lun. 10:00', newSlot: 'mar. 14:00', contact: 'Duc' },
+  { kind: 'viewing_cancelled', title: 'Studio Montmartre', slot: 'lun. 10:00', contact: 'Duc', reason: 'empêchement' },
   { kind: 'handoff_requested', reason: 'sujet sensible', leadName: 'Duc' }
 ];
 
