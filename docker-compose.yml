@@ -32,6 +32,8 @@ services:
       RUN_DB_MIGRATE: "true"
       RUN_DB_SEED: "true"
       NEXT_TELEMETRY_DISABLED: "1"
+      # F4a: run the scheduled-message delivery loop in this (single) app instance.
+      RUN_SCHEDULER: "1"
     volumes:
       - .:/app
       - app_node_modules:/app/node_modules
