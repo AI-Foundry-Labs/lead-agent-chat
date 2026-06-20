@@ -73,7 +73,7 @@ async function handleDetail(chatId: string, agency: Agency, leadId: string, thre
     `Statut: ${lead.status}${lead.potential_status ? ` · ${lead.potential_status}` : ''}`,
     lead.score_reason ? `Raison: ${lead.score_reason}` : null,
     Object.keys(lead.qual_values ?? {}).length ? `Qualif: ${JSON.stringify(lead.qual_values)}` : null,
-    lead.persona ? `Persona: ${lead.persona.slice(0, 400)}` : null,
+    lead.long_term_memory ? `Mémoire: ${lead.long_term_memory.slice(0, 400)}` : null,
   ].filter(Boolean);
   void enqueueGroupSend(chatId, clip(lines.join('\n')), { threadId, kind: 'critical' });
 }

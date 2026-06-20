@@ -13,6 +13,7 @@ import { buildTemplatesTools } from './templates';
 import { buildVisitorPoolTools } from './visitor-pool';
 import { buildGdprTools } from './gdpr';
 import { buildScheduledMessagesTools } from './scheduled-messages';
+import { buildAdminTools } from './admin';
 export type { RunAgentTurn } from './types';
 
 export function buildMainAssistantTools(
@@ -33,6 +34,7 @@ export function buildMainAssistantTools(
     ...buildTemplatesTools(ctx),
     ...buildVisitorPoolTools(ctx, adminId),
     ...buildGdprTools(ctx, adminId),
-    ...buildScheduledMessagesTools(ctx, adminId)
+    ...buildScheduledMessagesTools(ctx, adminId),
+    ...buildAdminTools(adminId)
   };
 }

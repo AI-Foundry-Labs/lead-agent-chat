@@ -127,8 +127,6 @@ export const leads = pgTable(
     score_reason: text('score_reason'),
     // Cross-thread visitor memory (modest cap enforced in app layer).
     long_term_memory: text('long_term_memory'),
-    // Freeform agent/admin-written profile of the lead (editable in admin UI).
-    persona: text('persona'),
     // Set when the visitor links Telegram via /start <token> from the site.
     telegram_user_id: varchar('telegram_user_id', { length: 50 }),
     // Per-agency sequence number assigned when an anonymous visitor is promoted
@@ -248,6 +246,8 @@ export const admins = pgTable(
     name: varchar('name', { length: 255 }),
     telegram_user_id: varchar('telegram_user_id', { length: 50 }),
     preferred_lang: varchar('preferred_lang', { length: 2 }).default('fr').notNull(),
+    // How the bot should address / interact with this admin (tone, style, context).
+    persona: text('persona'),
     created_at: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),

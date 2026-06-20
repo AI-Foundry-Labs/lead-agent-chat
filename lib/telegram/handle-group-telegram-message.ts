@@ -115,7 +115,9 @@ export async function handleMasterTopicMessage(
     // Deterministic read commands (/help, /leads, /lead, /lead_history, /pool).
     if (await tryHandleMasterCommand(chatId, agency, threadId, text)) return;
 
-    const cmd = parseAgentCommand(text);
+    // Strip @botname suffix Telegram appends in group chats (e.g. /agent@bot → /agent).
+    const normalizedText = text.replace(/^(\/\w+)@\S+/, '$1');
+    const cmd = parseAgentCommand(normalizedText);
 
     // /agent — show picker (Main + all leads, highlight active)
     if (cmd.kind === 'show') {

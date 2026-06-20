@@ -29,6 +29,7 @@ import { buildLeadTools } from '@/lib/agent/tools/lead-tools';
 import { buildOperatorTools } from '@/lib/agent/tools/operator-tools';
 import { buildMainAssistantTools } from '@/lib/agent/tools/main-assistant';
 import { buildMainAssistantSystemPrompt } from '@/lib/agent/prompts/main-assistant-prompt';
+import { getAdminById } from '@/lib/db/admins';
 import type { AgentContext } from '@/lib/agent/tools/context';
 import type { Conversation, Language } from '@/lib/types';
 import { agentLog } from '@/lib/logger';
@@ -154,7 +155,12 @@ export async function runAgentTurn(
   let system: string;
   let tools;
   if (actor.type === 'main_assistant') {
-    system = await buildMainAssistantSystemPrompt({ config, adminName: actor.adminName });
+    const adminRow = await getAdminById(actor.adminId);
+    system = await buildMainAssistantSystemPrompt({
+      config,
+      adminName: actor.adminName,
+      adminPersona: adminRow?.persona ?? null,
+    });
     tools = buildMainAssistantTools(ctx, actor.adminId, actor.adminName, runAgentTurn as Parameters<typeof buildMainAssistantTools>[3]);
   } else if (actor.type === 'operator') {
     const lead = actor.leadId ? await getLeadById(actor.leadId) : null;

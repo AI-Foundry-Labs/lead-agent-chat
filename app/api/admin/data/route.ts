@@ -61,7 +61,8 @@ export async function GET() {
       listings,
       criteria: config?.qualification_criteria ?? [],
       config: config ? { name: config.name, tone: config.tone } : null,
-      rules
+      rules,
+      adminPersona: admin.persona ?? null
     });
   } catch (e) {
     return toAuthResponse(e) ?? Response.json({ error: 'error' }, { status: 500 });

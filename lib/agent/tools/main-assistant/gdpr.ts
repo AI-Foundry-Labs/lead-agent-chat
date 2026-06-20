@@ -124,7 +124,6 @@ export function buildGdprTools(ctx: AgentContext, adminId: string) {
             status: lead.status,
             potential_status: lead.potential_status,
             qual_values: lead.qual_values,
-            persona: lead.persona,
             long_term_memory: lead.long_term_memory,
             created_at: lead.created_at
           },

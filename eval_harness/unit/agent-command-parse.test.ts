@@ -16,7 +16,7 @@ describe('parseAgentCommand', () => {
   it('returns set_lead with trimmed query for /agent lead <q>', () => {
     assert.deepEqual(parseAgentCommand('/agent lead Marie Dupont'), {
       kind: 'set_lead',
-      query: 'Marie Dupont'
+      query: 'Marie Dupont',
     });
   });
   it('returns show for /agent lead with no query', () => {
@@ -31,7 +31,32 @@ describe('parseAgentCallback', () => {
   it('parses agent:lead:<id>', () => {
     assert.deepEqual(parseAgentCallback('agent:lead:abc-123'), { kind: 'lead', leadId: 'abc-123' });
   });
+  it('parses agent:history:<id>', () => {
+    assert.deepEqual(parseAgentCallback('agent:history:uuid-456'), { kind: 'history', leadId: 'uuid-456' });
+  });
+  it('parses agent:detail:<id>', () => {
+    assert.deepEqual(parseAgentCallback('agent:detail:uuid-789'), { kind: 'detail', leadId: 'uuid-789' });
+  });
+  it('parses agent:agent_pg:<n>', () => {
+    assert.deepEqual(parseAgentCallback('agent:agent_pg:2'), { kind: 'agent_pg', page: 2 });
+  });
+  it('parses agent:leads_pg:<status>:<n>', () => {
+    assert.deepEqual(parseAgentCallback('agent:leads_pg:active:1'), {
+      kind: 'leads_pg', status: 'active', page: 1,
+    });
+  });
+  it('parses agent:leads_pg:all:<n> as empty status', () => {
+    assert.deepEqual(parseAgentCallback('agent:leads_pg:all:0'), {
+      kind: 'leads_pg', status: '', page: 0,
+    });
+  });
+  it('parses agent:hist_pg:<n>', () => {
+    assert.deepEqual(parseAgentCallback('agent:hist_pg:3'), { kind: 'hist_pg', page: 3 });
+  });
   it('returns null for unrelated data', () => {
     assert.equal(parseAgentCallback('other:thing'), null);
+  });
+  it('returns null for empty string', () => {
+    assert.equal(parseAgentCallback(''), null);
   });
 });

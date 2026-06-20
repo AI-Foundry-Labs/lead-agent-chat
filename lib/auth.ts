@@ -49,7 +49,7 @@ function sha256(s: string): string {
   return crypto.createHash('sha256').update(s).digest('hex');
 }
 
-export type AdminInfo = { id: string; email: string; name: string | null; agency_id: string };
+export type AdminInfo = { id: string; email: string; name: string | null; agency_id: string; persona: string | null };
 
 export async function createAdminSession(
   adminId: string,
@@ -79,7 +79,7 @@ export async function getAdminFromCookies(): Promise<AdminInfo | null> {
   const token = jar.get(ADMIN_COOKIE)?.value;
   if (!token) return null;
   const rows = await db
-    .select({ id: admins.id, email: admins.email, name: admins.name, agency_id: admins.agency_id })
+    .select({ id: admins.id, email: admins.email, name: admins.name, agency_id: admins.agency_id, persona: admins.persona })
     .from(admin_sessions)
     .innerJoin(admins, eq(admins.id, admin_sessions.admin_id))
     .where(

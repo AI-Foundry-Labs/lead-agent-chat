@@ -70,7 +70,7 @@ export function buildLeadsTools(ctx: AgentContext, adminId: string) {
     }),
 
     get_lead_detail: tool({
-      description: "Read a lead's full profile (including persona), qualification state, and conversation messages.",
+      description: "Read a lead's full profile, qualification state, and conversation messages.",
       inputSchema: z.object({ lead_id: z.string() }),
       execute: async ({ lead_id }) => {
         const lead = await getLeadById(lead_id);
@@ -86,8 +86,7 @@ export function buildLeadsTools(ctx: AgentContext, adminId: string) {
             potential: lead.potential_status,
             qual_values: lead.qual_values,
             score_reason: lead.score_reason,
-            long_term_memory: lead.long_term_memory,
-            persona: lead.persona
+            long_term_memory: lead.long_term_memory
           },
           conversation_id: conv?.id ?? null,
           mode: conv?.mode ?? null,
@@ -148,21 +147,6 @@ export function buildLeadsTools(ctx: AgentContext, adminId: string) {
           status: updated.status,
           potential_status: updated.potential_status
         };
-      }
-    }),
-
-    update_lead_persona: tool({
-      description: 'Set the AI-generated persona description for a lead (max 2000 chars). Overwrites existing persona.',
-      inputSchema: z.object({
-        lead_id: z.string(),
-        persona: z.string().max(2000).describe('Free-text persona summary for this lead')
-      }),
-      execute: async ({ lead_id, persona }) => {
-        const lead = await getLeadById(lead_id);
-        if (!lead || lead.agency_id !== agencyId) return { error: 'lead_not_found' };
-        await updateLead(lead_id, { persona });
-        await recordAudit({ agency_id: agencyId, admin_id: adminId, action: 'lead_persona_updated', target_lead_id: lead_id });
-        return { ok: true };
       }
     }),
 

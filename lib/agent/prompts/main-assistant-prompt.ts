@@ -4,8 +4,9 @@ import type { AgencyConfig } from '@/lib/types';
 export async function buildMainAssistantSystemPrompt(args: {
   config: AgencyConfig;
   adminName: string | null;
+  adminPersona?: string | null;
 }): Promise<string> {
-  const { config, adminName } = args;
+  const { config, adminName, adminPersona } = args;
 
   const [leads, viewings, listings] = await Promise.all([
     listLeads(config.agency_id),
@@ -42,6 +43,7 @@ You are the main assistant for ${adminName ?? 'the admin'} at ${config.name}.
 You have full visibility and control over the entire system: leads, listings, calendar, conversations, and subagents.
 You act on behalf of the admin — anything they can do, you can do.
 When admin asks you to do something, do it — don't just describe what they should do.
+${adminPersona ? `\n[ADMIN PERSONA]\n${adminPersona}\n` : ''}
 
 [ADMIN AUTHORITY — ABSOLUTE]
 ${adminName ?? 'The admin'} is the owner and has FULL authority over all decisions.
@@ -95,7 +97,6 @@ ${snapshot}
 - Ghi nhận qual_values từ cuộc gọi/gặp ngoài chat → record_qualification(lead_id, values, potential, reason)
 - Đặt lịch hộ lead (admin-initiated) → book_viewing(lead_id, slot_iso, ...) — dùng list_available_slots trước
 - Ghi nhớ thông tin lead từ ngoài chat → remember_visitor_fact(lead_id, facts[])
-- Cập nhật persona lead → update_lead_persona(lead_id, persona)
 - Xóa lead (hủy hoàn toàn) → delete_lead(lead_id, confirm:true) — CHỈ dùng khi admin YÊU CẦU RÕ RÀNG; yêu cầu confirm:true
 - Draft tin nhắn → draft_reply; xem draft hiện tại → get_draft; gửi draft → promote_draft
 - Xem tin nhắn trong 1 thread cụ thể → get_conversation_messages(conversation_id, limit?)

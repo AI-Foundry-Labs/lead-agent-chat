@@ -108,7 +108,7 @@ export async function tryHandleMasterCommand(
         Object.keys(lead.qual_values ?? {}).length
           ? `Qualif: ${JSON.stringify(lead.qual_values)}`
           : null,
-        lead.persona ? `Persona: ${lead.persona.slice(0, 400)}` : null,
+        lead.long_term_memory ? `Mémoire: ${lead.long_term_memory.slice(0, 400)}` : null,
       ].filter(Boolean);
       reply(lines.join('\n'));
       return true;

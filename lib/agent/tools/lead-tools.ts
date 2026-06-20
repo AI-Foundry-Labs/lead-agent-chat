@@ -432,18 +432,5 @@ export function buildLeadTools(ctx: AgentContext) {
         return result;
       }
     }),
-
-    update_lead_persona: tool({
-      description:
-        'Update or replace the lead\'s freeform persona text. Call after gathering enough context to write a concise profile summary (1–5 sentences). Captures identity, stated intent, preferences, key objections, and behavioral notes. This is the curated admin view of the lead — write it as a professional agent briefing note.',
-      inputSchema: z.object({
-        persona: z.string().max(2000).describe('Freeform profile summary, 1–5 sentences')
-      }),
-      execute: async ({ persona }) => {
-        const lead = await ensureLead(ctx);
-        await updateLead(lead.id, { persona });
-        return { ok: true };
-      }
-    })
   };
 }
