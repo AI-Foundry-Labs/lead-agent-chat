@@ -22,7 +22,7 @@ export type StaffEvent =
   | { kind: 'handoff_requested'; reason: string; leadName?: string | null };
 
 // Leading marker per event so the channel still reads at a glance.
-const MARKER: Record<StaffEvent['kind'], string> = {
+export const STAFF_MARKER: Record<StaffEvent['kind'], string> = {
   handoff: '🚨',
   manual: '📩',
   viewing_booked: '📅',
@@ -68,7 +68,11 @@ function userPrompt(event: StaffEvent, lang: Language): string {
   }
 }
 
-function fallback(event: StaffEvent, lang: Language): string {
+/**
+ * Deterministic template fallback for an event. Exported for tests and reused on
+ * any LLM failure so a staff notification is never lost or empty.
+ */
+export function staffReportFallback(event: StaffEvent, lang: Language): string {
   const n = notif(lang);
   switch (event.kind) {
     case 'handoff':
@@ -97,10 +101,10 @@ export async function generateStaffReport(
       prompt: userPrompt(event, lang)
     });
     const body = text.trim();
-    if (!body) return fallback(event, lang);
-    return `${MARKER[event.kind]} ${body}`;
+    if (!body) return staffReportFallback(event, lang);
+    return `${STAFF_MARKER[event.kind]} ${body}`;
   } catch (e) {
     agentLog.warn('agent.staff_report.error', { kind: event.kind, error: String(e) });
-    return fallback(event, lang);
+    return staffReportFallback(event, lang);
   }
 }
