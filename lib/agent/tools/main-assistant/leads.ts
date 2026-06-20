@@ -10,6 +10,7 @@ import {
   updateLead,
   listConversationsByLeadId,
   listViewingsByLead,
+  recordAudit,
   db,
   leads
 } from '@/lib/db';
@@ -17,7 +18,8 @@ import { formatSlot } from '@/lib/format';
 import { broadcastAgencyDataChanged } from '@/lib/events';
 import type { AgentContext } from '@/lib/agent/tools/context';
 
-export function buildLeadsTools(ctx: AgentContext) {
+export function buildLeadsTools(ctx: AgentContext, adminId: string) {
+  const agencyId = ctx.config.agency_id;
   return {
     query_leads: tool({
       description: 'List/filter leads by status, potential, listing, or recency.',
@@ -72,9 +74,10 @@ export function buildLeadsTools(ctx: AgentContext) {
       inputSchema: z.object({ lead_id: z.string() }),
       execute: async ({ lead_id }) => {
         const lead = await getLeadById(lead_id);
-        if (!lead) return { error: 'lead_not_found' };
+        if (!lead || lead.agency_id !== agencyId) return { error: 'lead_not_found' };
         const conv = await getConversationByLeadId(lead_id);
         const msgs = conv ? await getVisibleMessages(conv.id) : [];
+        await recordAudit({ agency_id: agencyId, admin_id: adminId, action: 'lead_viewed', target_lead_id: lead_id });
         return {
           lead: {
             email: lead.email,
@@ -115,7 +118,7 @@ export function buildLeadsTools(ctx: AgentContext) {
       }),
       execute: async ({ lead_id, name, email, status, potential_status, memory_note }) => {
         const lead = await getLeadById(lead_id);
-        if (!lead) return { error: 'lead_not_found' };
+        if (!lead || lead.agency_id !== agencyId) return { error: 'lead_not_found' };
         const updated = await updateLead(lead_id, {
           ...(name !== undefined && { name }),
           ...(email !== undefined && { email }),
@@ -130,6 +133,13 @@ export function buildLeadsTools(ctx: AgentContext) {
             `PURCHASE STATUS — ${date}: ${statusNote}${potentialNote}. ${memory_note}`
           ]);
         }
+        await recordAudit({
+          agency_id: agencyId,
+          admin_id: adminId,
+          action: 'lead_updated',
+          target_lead_id: lead_id,
+          details: { status, potential_status }
+        });
         return {
           ok: true,
           id: updated.id,
@@ -149,8 +159,9 @@ export function buildLeadsTools(ctx: AgentContext) {
       }),
       execute: async ({ lead_id, persona }) => {
         const lead = await getLeadById(lead_id);
-        if (!lead || lead.agency_id !== ctx.config.agency_id) return { error: 'lead_not_found' };
+        if (!lead || lead.agency_id !== agencyId) return { error: 'lead_not_found' };
         await updateLead(lead_id, { persona });
+        await recordAudit({ agency_id: agencyId, admin_id: adminId, action: 'lead_persona_updated', target_lead_id: lead_id });
         return { ok: true };
       }
     }),
@@ -166,7 +177,10 @@ export function buildLeadsTools(ctx: AgentContext) {
       execute: async ({ lead_id, confirm }) => {
         if (!confirm) return { error: 'confirmation_required', hint: 'pass confirm:true to execute' };
         const lead = await getLeadById(lead_id);
-        if (!lead || lead.agency_id !== ctx.config.agency_id) return { error: 'lead_not_found' };
+        if (!lead || lead.agency_id !== agencyId) return { error: 'lead_not_found' };
+        // Emit the erasure audit BEFORE deletion. No PII in details (CNIL: no trace);
+        // target_lead_id has no FK so this row survives the lead's removal.
+        await recordAudit({ agency_id: agencyId, admin_id: adminId, action: 'lead_erasure_executed', target_lead_id: lead_id });
         // Import lazily to avoid circular deps at module load time
         const { closeLeadTopics } = await import('@/lib/db');
         await closeLeadTopics(lead_id).catch(() => {});
@@ -191,7 +205,7 @@ export function buildLeadsTools(ctx: AgentContext) {
       }),
       execute: async ({ lead_id, values, potential_status, reason }) => {
         const lead = await getLeadById(lead_id);
-        if (!lead) return { error: 'lead_not_found' };
+        if (!lead || lead.agency_id !== agencyId) return { error: 'lead_not_found' };
         const merged = { ...lead.qual_values, ...values };
         const allKeys = ctx.config.qualification_criteria.map((c) => c.key);
         const complete = allKeys.every((k) => merged[k]);
@@ -206,6 +220,7 @@ export function buildLeadsTools(ctx: AgentContext) {
           return `${label}: ${v}`;
         });
         scheduleAppendLeadLongTermFacts(lead_id, [...factLines, `potential: ${potential_status}`], reason);
+        await recordAudit({ agency_id: agencyId, admin_id: adminId, action: 'lead_qualified', target_lead_id: lead_id, details: { potential_status } });
         return { ok: true, qual_values: updated.qual_values, potential_status, all_criteria_collected: complete };
       }
     }),
@@ -221,10 +236,11 @@ export function buildLeadsTools(ctx: AgentContext) {
       }),
       execute: async ({ lead_id, facts }) => {
         const lead = await getLeadById(lead_id);
-        if (!lead) return { error: 'lead_not_found' };
+        if (!lead || lead.agency_id !== agencyId) return { error: 'lead_not_found' };
         const date = new Date().toISOString().slice(0, 10);
         const tagged = facts.map((f) => f.includes('[') ? f : `[admin · ${date}] ${f}`);
         scheduleAppendLeadLongTermFacts(lead_id, tagged);
+        await recordAudit({ agency_id: agencyId, admin_id: adminId, action: 'lead_fact_added', target_lead_id: lead_id });
         return { ok: true, stored: tagged.length };
       }
     }),

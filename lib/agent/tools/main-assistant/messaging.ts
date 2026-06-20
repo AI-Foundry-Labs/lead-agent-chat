@@ -1,6 +1,6 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import { ilike, eq } from 'drizzle-orm';
+import { ilike, eq, and, or, inArray } from 'drizzle-orm';
 import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
 import {
   getConversationByLeadId,
@@ -9,10 +9,13 @@ import {
   updateConversation,
   getLatestDraft,
   promoteDraftToSent,
+  recordAudit,
   db,
   messages,
-  conversations
+  conversations,
+  lead_telegram_topics
 } from '@/lib/db';
+import type { SQL } from 'drizzle-orm';
 import { dispatchReply } from '@/lib/dispatch';
 import { broadcastConversationUpdate } from '@/lib/events';
 import type { AgentContext } from '@/lib/agent/tools/context';
@@ -26,13 +29,53 @@ export function buildMessagingTools(
 ) {
   return {
     search_messages: tool({
-      description: 'Search for a keyword across all conversation messages. Returns matching messages with lead/conversation context.',
+      description:
+        'Search a keyword across conversation messages (agency-scoped). ' +
+        "Use channel='telegram' to search only Telegram surfaces (lead DMs + agency group topics); " +
+        "each result is tagged surface='dm'|'group'. Default channel='all'.",
       inputSchema: z.object({
         query: z.string().min(1).max(200),
+        channel: z.enum(['web', 'email', 'telegram', 'all']).optional(),
         limit: z.number().int().min(1).max(30).optional()
       }),
-      execute: async ({ query, limit }) => {
+      execute: async ({ query, channel, limit }) => {
         const q = `%${query}%`;
+        const agencyId = ctx.config.agency_id;
+
+        // Group-topic conversations for this agency (their primary_channel may be
+        // 'web' since the mirror conversation isn't itself a Telegram DM).
+        const topicRows = await db
+          .select({
+            lead_conv: lead_telegram_topics.lead_conversation_id,
+            op_conv: lead_telegram_topics.operator_conversation_id
+          })
+          .from(lead_telegram_topics)
+          .where(eq(lead_telegram_topics.agency_id, agencyId));
+        const groupConvIds = [
+          ...new Set(
+            topicRows
+              .flatMap((r) => [r.lead_conv, r.op_conv])
+              .filter((id): id is string => !!id)
+          )
+        ];
+
+        // Build the WHERE: always agency-scoped + keyword (bugfix: previously unscoped).
+        const filters: SQL[] = [
+          eq(conversations.agency_id, agencyId),
+          ilike(messages.content, q)
+        ];
+        if (channel === 'telegram') {
+          const telegramSurface = groupConvIds.length
+            ? or(
+                eq(conversations.primary_channel, 'telegram'),
+                inArray(conversations.id, groupConvIds)
+              )!
+            : eq(conversations.primary_channel, 'telegram');
+          filters.push(telegramSurface);
+        } else if (channel === 'web' || channel === 'email') {
+          filters.push(eq(conversations.primary_channel, channel));
+        }
+
         const rows = await db
           .select({
             message_id: messages.id,
@@ -40,19 +83,27 @@ export function buildMessagingTools(
             role: messages.role,
             content: messages.content,
             timestamp: messages.timestamp,
-            lead_id: conversations.lead_id
+            lead_id: conversations.lead_id,
+            primary_channel: conversations.primary_channel
           })
           .from(messages)
           .innerJoin(conversations, eq(messages.conversation_id, conversations.id))
-          .where(ilike(messages.content, q))
+          .where(and(...filters))
           .orderBy(messages.timestamp)
           .limit(limit ?? 15);
+
+        const groupSet = new Set(groupConvIds);
         return rows.map((r) => ({
           conversation_id: r.conversation_id,
           lead_id: r.lead_id,
           role: r.role,
           excerpt: r.content.slice(0, 300),
-          timestamp: r.timestamp
+          timestamp: r.timestamp,
+          surface: groupSet.has(r.conversation_id)
+            ? 'group'
+            : r.primary_channel === 'telegram'
+              ? 'dm'
+              : null
         }));
       }
     }),
@@ -92,6 +143,7 @@ export function buildMessagingTools(
           const date = new Date().toISOString().slice(0, 10);
           scheduleAppendLeadLongTermFacts(lead_id, [`ADMIN ACTION — ${date}: ${memory_note}`]);
         }
+        await recordAudit({ agency_id: ctx.config.agency_id, admin_id: adminId, action: 'message_sent', target_lead_id: lead_id });
         return { ok: true, sent: true };
       }
     }),
@@ -122,6 +174,7 @@ export function buildMessagingTools(
         await promoteDraftToSent(draft.id, content);
         await dispatchReply(conv, content ?? draft.content);
         broadcastConversationUpdate(conv.id);
+        await recordAudit({ agency_id: ctx.config.agency_id, admin_id: adminId, action: 'message_sent', target_lead_id: lead_id });
         return { ok: true, sent: true };
       }
     }),
@@ -145,6 +198,7 @@ export function buildMessagingTools(
         if (!conv) return { error: 'conversation_not_found' };
         await updateConversation(conv.id, { mode: 'manual' });
         broadcastConversationUpdate(conv.id);
+        await recordAudit({ agency_id: ctx.config.agency_id, admin_id: adminId, action: 'conversation_takeover', target_lead_id: lead_id });
         return { ok: true, mode: 'manual' };
       }
     }),

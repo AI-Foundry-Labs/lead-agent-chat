@@ -9,6 +9,10 @@ import { buildConfigTools } from './config';
 import { buildTelegramTools } from './telegram';
 import { buildAnalyticsTools } from './analytics';
 import { buildSubagentsTools } from './subagents';
+import { buildTemplatesTools } from './templates';
+import { buildVisitorPoolTools } from './visitor-pool';
+import { buildGdprTools } from './gdpr';
+import { buildScheduledMessagesTools } from './scheduled-messages';
 export type { RunAgentTurn } from './types';
 
 export function buildMainAssistantTools(
@@ -18,13 +22,17 @@ export function buildMainAssistantTools(
   runAgentTurn: Parameters<typeof buildMessagingTools>[3]
 ) {
   return {
-    ...buildLeadsTools(ctx),
+    ...buildLeadsTools(ctx, adminId),
     ...buildMessagingTools(ctx, adminId, adminName, runAgentTurn),
     ...buildListingsTools(ctx),
     ...buildViewingsTools(ctx),
     ...buildConfigTools(ctx),
     ...buildTelegramTools(ctx),
     ...buildAnalyticsTools(ctx),
-    ...buildSubagentsTools(ctx, adminId, adminName, runAgentTurn)
+    ...buildSubagentsTools(ctx, adminId, adminName, runAgentTurn),
+    ...buildTemplatesTools(ctx),
+    ...buildVisitorPoolTools(ctx, adminId),
+    ...buildGdprTools(ctx, adminId),
+    ...buildScheduledMessagesTools(ctx, adminId)
   };
 }

@@ -62,8 +62,14 @@ ${snapshot}
 - Gửi hàng loạt → bulk_follow_up (hot/warm leads im lặng X ngày), telegram_broadcast (filter by potential/listing)
 - Handoff rules → list_handoff_rules, create_handoff_rule, toggle_handoff_rule, delete_handoff_rule
 - Lọc leads theo trạng thái/potential → query_leads
+- Khách ẩn danh chưa định danh (triage pool) → list_visitor_pool, read_visitor_thread(conversation_id)
+- Định danh khách ẩn danh → identify_visitor(conversation_id, name?, email?) — BẮT BUỘC có name hoặc email; sau đó khách thành lead, hiện trong query_leads
+- RGPD/consent (thị trường Pháp) → set_consent(lead_id, consent_type, granted, source?), view_consent_status(lead_id)
+- Nhật ký truy cập lead → view_audit_history(lead_id) (ai xem/sửa lead, khi nào)
+- Xuất toàn bộ dữ liệu lead (RGPD Art.15) → export_lead_data(lead_id); quyền xóa (Art.17) → delete_lead (xóa cứng, không lưu vết)
+- Hẹn giờ gửi tin cho lead → schedule_message(lead_id, content, send_at_local) — giờ Paris "YYYY-MM-DD HH:MM", phải ở tương lai; xem/hủy → list_scheduled_messages, cancel_scheduled_message(id)
 - Tìm lead theo tên / email → search_leads (partial match, case-insensitive)
-- Tìm trong nội dung chat → search_messages (keyword across all conversations)
+- Tìm trong nội dung chat → search_messages (keyword; channel='telegram' để lọc riêng Telegram — kết quả gắn surface='dm'|'group')
 - Xem chi tiết lead → get_lead_detail (full profile + messages)
 - Xem tất cả threads của lead → get_lead_threads (web, Telegram, operator, etc.)
 - Cập nhật thông tin / trạng thái lead → update_lead_info (name, email, status, potential_status, memory_note)
@@ -98,6 +104,8 @@ ${snapshot}
 - Trạng thái Telegram → get_telegram_status
 - Phát hành link token Telegram → issue_telegram_link_token
 - Đóng Telegram topics của lead → close_lead_telegram_topics(lead_id)
+- Mẫu tin nhắn tái sử dụng → list_templates, get_template, create_template, update_template, delete_template
+- Soạn tin từ mẫu → render_template(template_id, lead_id?) điền {{name}}/{{email}}/{{listing_title}}/{{agency_name}}, rồi đưa kết quả cho send_reply/draft_reply (render KHÔNG tự gửi; kiểm tra unresolved[])
 
 [SKILLS — reasoning không cần tool]
 - Tóm tắt lead: gọi get_lead_detail + get_lead_viewings → tổng hợp thành briefing ngắn gọn
