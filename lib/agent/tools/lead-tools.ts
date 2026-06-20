@@ -8,7 +8,8 @@ import {
   findBookedSlot,
   createBookedViewing,
   listViewingsByConversation,
-  getViewingById
+  getViewingById,
+  getLeadById
 } from '@/lib/db';
 import { getAvailableSlots, createCalendarEvent, resolveSlotIso } from '@/lib/calendar';
 import { notifyAdmins } from '@/lib/notify';
@@ -373,7 +374,25 @@ export function buildLeadTools(ctx: AgentContext) {
         if (!viewing || viewing.conversation_id !== ctx.conversation.id) {
           return { error: 'viewing_not_found' };
         }
-        return cancelViewingWithMemory(viewing_id, ctx.config.calendar_id, reason);
+        const result = await cancelViewingWithMemory(viewing_id, ctx.config.calendar_id, reason);
+        // Notify the agency (web agent tab + Telegram) that the lead cancelled.
+        if (!('error' in result) && viewing.lead_id) {
+          const listing = viewing.listing_id ? await getListing(viewing.listing_id) : null;
+          const lead = await getLeadById(viewing.lead_id);
+          void pushAgentNotification({
+            agencyId: ctx.config.agency_id,
+            leadId: viewing.lead_id,
+            event: {
+              kind: 'viewing_cancelled',
+              title: listing?.title ?? viewing.listing_id ?? '—',
+              slot: viewing.confirmed_slot ? formatSlot(viewing.confirmed_slot.toString()) : '—',
+              contact: lead?.name ?? viewing.contact_email ?? '—',
+              reason
+            },
+            lang: ctx.lang
+          });
+        }
+        return result;
       }
     }),
 
@@ -391,7 +410,26 @@ export function buildLeadTools(ctx: AgentContext) {
         if (!viewing || viewing.conversation_id !== ctx.conversation.id) {
           return { error: 'viewing_not_found' };
         }
-        return rescheduleViewingWithMemory(viewing_id, new_slot_iso, ctx.config.calendar_id);
+        const oldSlot = viewing.confirmed_slot ? formatSlot(viewing.confirmed_slot.toString()) : '—';
+        const result = await rescheduleViewingWithMemory(viewing_id, new_slot_iso, ctx.config.calendar_id);
+        // Notify the agency (web agent tab + Telegram) that the lead rescheduled.
+        if (!('error' in result) && viewing.lead_id) {
+          const listing = viewing.listing_id ? await getListing(viewing.listing_id) : null;
+          const lead = await getLeadById(viewing.lead_id);
+          void pushAgentNotification({
+            agencyId: ctx.config.agency_id,
+            leadId: viewing.lead_id,
+            event: {
+              kind: 'viewing_rescheduled',
+              title: listing?.title ?? viewing.listing_id ?? '—',
+              oldSlot,
+              newSlot: result.new_slot,
+              contact: lead?.name ?? viewing.contact_email ?? '—'
+            },
+            lang: ctx.lang
+          });
+        }
+        return result;
       }
     }),
 

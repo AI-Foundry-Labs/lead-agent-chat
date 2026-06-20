@@ -19,6 +19,8 @@ export type StaffEvent =
   | { kind: 'handoff'; rule: string; message: string }
   | { kind: 'manual'; message: string }
   | { kind: 'viewing_booked'; title: string; slot: string; contact: string }
+  | { kind: 'viewing_rescheduled'; title: string; oldSlot: string; newSlot: string; contact: string }
+  | { kind: 'viewing_cancelled'; title: string; slot: string; contact: string; reason?: string | null }
   | { kind: 'handoff_requested'; reason: string; leadName?: string | null };
 
 // Leading marker per event so the channel still reads at a glance.
@@ -26,6 +28,8 @@ export const STAFF_MARKER: Record<StaffEvent['kind'], string> = {
   handoff: '🚨',
   manual: '📩',
   viewing_booked: '📅',
+  viewing_rescheduled: '🔄',
+  viewing_cancelled: '❌',
   handoff_requested: '🤝'
 };
 
@@ -61,6 +65,14 @@ function userPrompt(event: StaffEvent, lang: Language): string {
       return fr
         ? `Visite confirmée.\nBien : ${event.title}\nQuand : ${event.slot}\nContact : ${event.contact}`
         : `Viewing confirmed.\nProperty: ${event.title}\nWhen: ${event.slot}\nContact: ${event.contact}`;
+    case 'viewing_rescheduled':
+      return fr
+        ? `Le prospect a reprogrammé sa visite.\nBien : ${event.title}\nAvant : ${event.oldSlot}\nMaintenant : ${event.newSlot}\nContact : ${event.contact}`
+        : `The prospect rescheduled their viewing.\nProperty: ${event.title}\nBefore: ${event.oldSlot}\nNow: ${event.newSlot}\nContact: ${event.contact}`;
+    case 'viewing_cancelled':
+      return fr
+        ? `Le prospect a annulé sa visite.\nBien : ${event.title}\nQuand : ${event.slot}\nContact : ${event.contact}${event.reason ? `\nRaison : ${event.reason}` : ''}`
+        : `The prospect cancelled their viewing.\nProperty: ${event.title}\nWhen: ${event.slot}\nContact: ${event.contact}${event.reason ? `\nReason: ${event.reason}` : ''}`;
     case 'handoff_requested':
       return fr
         ? `Transfert demandé pour le prospect ${event.leadName ?? '(inconnu)'}.\nRaison : ${event.reason}`
@@ -81,6 +93,10 @@ export function staffReportFallback(event: StaffEvent, lang: Language): string {
       return n.manual(event.message);
     case 'viewing_booked':
       return n.viewing_booked_chat(event.title, event.slot, event.contact);
+    case 'viewing_rescheduled':
+      return n.viewing_rescheduled_chat(event.title, event.oldSlot, event.newSlot, event.contact);
+    case 'viewing_cancelled':
+      return n.viewing_cancelled_chat(event.title, event.slot, event.contact);
     case 'handoff_requested':
       return n.handoff_requested(event.reason);
   }

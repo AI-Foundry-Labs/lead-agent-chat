@@ -10,6 +10,10 @@ const strings = {
       `[Visite confirmée] ${title} — ${slot} — ${contact}`,
     viewing_booked_chat: (title: string, slot: string, contact: string) =>
       `📅 Nouvelle visite confirmée\n\n**Bien :** ${title}\n**Quand :** ${slot}\n**Contact :** ${contact}`,
+    viewing_rescheduled_chat: (title: string, oldSlot: string, newSlot: string, contact: string) =>
+      `🔄 Visite reprogrammée\n\n**Bien :** ${title}\n**Avant :** ${oldSlot}\n**Maintenant :** ${newSlot}\n**Contact :** ${contact}`,
+    viewing_cancelled_chat: (title: string, slot: string, contact: string) =>
+      `❌ Visite annulée\n\n**Bien :** ${title}\n**Quand :** ${slot}\n**Contact :** ${contact}`,
     handoff_requested: (reason: string) =>
       `[Transfert demandé] ${reason}`,
   },
@@ -22,6 +26,10 @@ const strings = {
       `[Viewing booked] ${title} — ${slot} — ${contact}`,
     viewing_booked_chat: (title: string, slot: string, contact: string) =>
       `📅 New viewing confirmed\n\n**Property:** ${title}\n**When:** ${slot}\n**Contact:** ${contact}`,
+    viewing_rescheduled_chat: (title: string, oldSlot: string, newSlot: string, contact: string) =>
+      `🔄 Viewing rescheduled\n\n**Property:** ${title}\n**Before:** ${oldSlot}\n**Now:** ${newSlot}\n**Contact:** ${contact}`,
+    viewing_cancelled_chat: (title: string, slot: string, contact: string) =>
+      `❌ Viewing cancelled\n\n**Property:** ${title}\n**When:** ${slot}\n**Contact:** ${contact}`,
     handoff_requested: (reason: string) =>
       `[Handoff requested] ${reason}`,
   },

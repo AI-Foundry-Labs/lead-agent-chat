@@ -77,9 +77,10 @@ export async function pushAgentNotification(args: {
   // 4. Send to the Master topic chat channel (non-fatal on failure).
   try {
     const agency = await getAgencyById(agencyId);
-    if (agency?.telegram_group_chat_id && agency.telegram_master_topic_id !== null) {
+    // Single-topic UX: send to the group whenever it's linked. Use the Master
+    // topic when set, otherwise fall back to General (threadId undefined).
+    if (agency?.telegram_group_chat_id) {
       void enqueueGroupSend(agency.telegram_group_chat_id, content, {
-        // telegram_master_topic_id is number|null; opts.threadId is number|undefined
         threadId: agency.telegram_master_topic_id ?? undefined,
         kind: 'critical'
       });
