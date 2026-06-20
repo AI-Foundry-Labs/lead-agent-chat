@@ -116,11 +116,12 @@ async function handleAgencyGroupLink(
 
   await sendTelegramMessage(
     chatId,
-    "✅ Groupe lié à l'agence. Le bot est prêt à créer des fils par lead.\n" +
-    '✅ Group linked to the agency. The bot is ready to create per-lead topics.\n\n' +
-    'Prochaines étapes / Next steps:\n' +
-    '• Les nouveaux leads déclencheront automatiquement la création de sujets.\n' +
-    '• New leads will automatically trigger topic creation.'
+    "✅ Groupe lié à l'agence.\n" +
+    '✅ Group linked to the agency.\n\n' +
+    'Tout se passe dans le sujet 🛠 Master / Everything happens in the 🛠 Master topic:\n' +
+    '• Écrivez du texte pour discuter avec l’assistant. / Type to chat with the assistant.\n' +
+    '• /help pour voir les commandes (/agent, /leads, /lead_history, /pool…).\n' +
+    '• /help to list commands (/agent, /leads, /lead_history, /pool…).'
   );
 }
 
@@ -138,11 +139,9 @@ export async function handleTelegramUpdate(
     const data = cq.data ?? '';
     const fromId = cq.from?.id != null ? String(cq.from.id) : '';
     const agency = chatId ? await getAgencyByTelegramGroup(chatId) : null;
-    if (
-      agency &&
-      agency.telegram_master_topic_id !== null &&
-      threadId === agency.telegram_master_topic_id
-    ) {
+    // Single-topic UX: handle the /agent inline-keyboard tap wherever it was
+    // posted (General or any thread) — reply goes back to that same thread.
+    if (agency) {
       await handleAgentCallback(chatId, agency, fromId, data, threadId);
       return 'group';
     }
@@ -197,7 +196,11 @@ export async function handleTelegramUpdate(
       await handleConversationTopicMessage(chatId, route.mapping);
       return 'group';
     }
-    return 'ignored'; // general / unknown thread
+    // Single-topic UX: any other thread (General, Master, or unknown) is the one
+    // admin↔assistant surface — handle it there so the bot is never silent on a
+    // command/chat just because the admin used General instead of 🛠 Master.
+    await handleMasterTopicMessage(chatId, agency, fromId, text, msg.message_thread_id);
+    return 'group';
   }
 
   // ── PRIVATE branch ────────────────────────────────────────────────────────

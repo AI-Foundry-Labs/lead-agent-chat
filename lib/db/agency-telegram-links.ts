@@ -42,12 +42,13 @@ export async function bindTelegramGroupToAgency(
   agencyId: string,
   groupChatId: string
 ): Promise<void> {
-  // The caller (handleAgencyGroupLink) only binds after verify-agency-group has
-  // confirmed the chat is a forum, so enabling topics here is safe and required —
-  // getOrCreateLeadTopics skips topic creation unless telegram_topics_enabled is true.
+  // Single-topic UX: per-lead forum topic pairs are DISABLED. Everything happens in
+  // the 🛠 Master topic via the assistant + slash commands (/leads, /lead_history, …).
+  // Keep telegram_topics_enabled=false so getOrCreateLeadTopics stays a no-op; the
+  // Master topic itself is created separately by the /link handler.
   await db
     .update(agencies)
-    .set({ telegram_group_chat_id: groupChatId, telegram_topics_enabled: true })
+    .set({ telegram_group_chat_id: groupChatId, telegram_topics_enabled: false })
     .where(eq(agencies.id, agencyId));
 }
 

@@ -28,7 +28,8 @@ async function main() {
     process.exit(1);
   }
 
-  bot.on('message', async (ctx) => {
+  // Forward EVERY update (message + callback_query for the /agent inline picker).
+  bot.use(async (ctx) => {
     try {
       await forwardUpdate(ctx.update);
     } catch (e) {
@@ -37,8 +38,20 @@ async function main() {
   });
   bot.catch((e) => console.error('[telegram-dev] bot error:', e));
 
+  // Register the slash-command menu (the "/" suggestions in Telegram).
+  await bot.api
+    .setMyCommands([
+      { command: 'agent', description: 'Changer d’agent (main ↔ opérateur)' },
+      { command: 'leads', description: 'Lister les leads' },
+      { command: 'lead', description: 'Détail d’un lead <nom|email>' },
+      { command: 'lead_history', description: 'Historique conversation <nom|email>' },
+      { command: 'pool', description: 'Visiteurs anonymes' },
+      { command: 'help', description: 'Aide / liste des commandes' }
+    ])
+    .catch((e) => console.error('[telegram-dev] setMyCommands failed:', e));
+
   console.log('🤖 Telegram long-polling started. Send /start <token> to your bot.');
-  await bot.start();
+  await bot.start({ allowed_updates: ['message', 'callback_query'] });
 }
 
 main().catch((e) => {

@@ -19,6 +19,7 @@ import type { Agency } from '@/lib/db/agencies';
 import { parseAgentCommand, parseAgentCallback, buildAgentKeyboard, formatAgentLabel } from '@/lib/telegram/agent-command';
 import { getAgentSession, setAgentSession, resolveActiveActor } from '@/lib/db/telegram-agent-sessions';
 import { sendTelegramKeyboard } from '@/lib/telegram/send-keyboard';
+import { tryHandleMasterCommand } from '@/lib/telegram/master-commands';
 
 // ─── Topic 2 (🤖 Assistant): operator copilot turn ────────────────────────
 
@@ -100,7 +101,7 @@ export async function handleMasterTopicMessage(
   agency: Agency,
   fromId: string,
   text: string,
-  threadId: number
+  threadId: number | undefined
 ): Promise<void> {
   try {
     const admin = await resolveActingAdmin(fromId, agency.id);
@@ -110,6 +111,9 @@ export async function handleMasterTopicMessage(
       });
       return;
     }
+
+    // Deterministic read commands (/help, /leads, /lead, /lead_history, /pool).
+    if (await tryHandleMasterCommand(chatId, agency, threadId, text)) return;
 
     const cmd = parseAgentCommand(text);
 
@@ -195,7 +199,7 @@ export async function handleAgentCallback(
   agency: Agency,
   fromId: string,
   data: string,
-  threadId: number
+  threadId: number | undefined
 ): Promise<void> {
   const admin = await resolveActingAdmin(fromId, agency.id);
   if (!admin) {
