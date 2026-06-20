@@ -71,6 +71,9 @@ if [[ "$MODE" == "all" || "$MODE" == "unit" ]]; then
   run_suite "Unit: Lead Topics Title Builders"      "$HARNESS/unit/lead-topics-title-builders.test.ts"
   run_suite "Unit: Group Send Queue Drop Policy"    "$HARNESS/unit/group-send-queue-drop-policy.test.ts"
   run_suite "Unit: Agency Host Resolution"          "$HARNESS/unit/agency-host-resolution.test.ts"
+  run_suite "Unit: Staff Report Fallback"           "$HARNESS/unit/staff-report-fallback.test.ts"
+  run_suite "Unit: Render Template"                 "$HARNESS/unit/render-template.test.ts"
+  run_suite "Unit: Paris Time"                      "$HARNESS/unit/paris-time.test.ts"
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "agent" ]]; then
@@ -92,6 +95,7 @@ if [[ "$MODE" == "all" || "$MODE" == "llm" ]]; then
   run_llm_suite "LLM: Summarize Thread"         "$HARNESS/agent/llm-contracts/summarize-thread.test.ts"
   run_llm_suite "LLM: Lead Conversation Flow"   "$HARNESS/agent/llm-contracts/lead-conversation-flow.test.ts"
   run_llm_suite "LLM: Admin Conversation Flow"  "$HARNESS/agent/llm-contracts/admin-conversation-flow.test.ts"
+  run_llm_suite "LLM: Staff Report"             "$HARNESS/agent/llm-contracts/staff-report.test.ts"
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "smoke" ]]; then
