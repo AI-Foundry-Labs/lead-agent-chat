@@ -16,7 +16,7 @@ import { getOrCreateMainAssistant, getOrCreateLeadOperator } from '@/lib/db/conv
 import { listLeads, getLeadById } from '@/lib/db';
 import type { LeadTelegramTopics } from '@/lib/db/lead-telegram-topics';
 import type { Agency } from '@/lib/db/agencies';
-import { parseAgentCommand, parseAgentCallback, buildAgentKeyboard, formatAgentLabel } from '@/lib/telegram/agent-command';
+import { parseAgentCommand, buildAgentKeyboard, formatAgentLabel } from '@/lib/telegram/agent-command';
 import { getAgentSession, setAgentSession, resolveActiveActor } from '@/lib/db/telegram-agent-sessions';
 import { sendTelegramKeyboard } from '@/lib/telegram/send-keyboard';
 import { tryHandleMasterCommand } from '@/lib/telegram/master-commands';
@@ -117,17 +117,18 @@ export async function handleMasterTopicMessage(
 
     const cmd = parseAgentCommand(text);
 
-    // /agent — show picker (Main + recent leads)
+    // /agent — show picker (Main + all leads, highlight active)
     if (cmd.kind === 'show') {
-      const leads = (await listLeads(agency.id)).slice(0, 8)
-        .map((l) => ({ id: l.id, label: l.name ?? l.email ?? l.id.slice(0, 8) }));
+      const allLeads = await listLeads(agency.id);
+      const leads = allLeads.map((l) => ({ id: l.id, label: l.name ?? l.email ?? l.id.slice(0, 8) }));
       const session = await getAgentSession(agency.id);
-      const current = formatAgentLabel(session, session?.agent_kind === 'operator'
-        ? (await getLeadById(session.lead_id))?.name : null);
+      const activeLeadId = session?.agent_kind === 'operator' ? session.lead_id : null;
+      const current = formatAgentLabel(session, activeLeadId
+        ? (await getLeadById(activeLeadId))?.name : null);
       await sendTelegramKeyboard(
         chatId,
         `Actuel : ${current}\nChoisissez l'agent : / Choose agent:`,
-        buildAgentKeyboard(leads),
+        buildAgentKeyboard(leads, { activeLeadId }),
         threadId
       );
       return;
@@ -191,35 +192,5 @@ export async function handleMasterTopicMessage(
   }
 }
 
-// ─── Inline-keyboard callback handler ────────────────────────────────────
-
-/** Handle an inline-keyboard tap (callback_query.data) in the Master topic. */
-export async function handleAgentCallback(
-  chatId: string,
-  agency: Agency,
-  fromId: string,
-  data: string,
-  threadId: number | undefined
-): Promise<void> {
-  const admin = await resolveActingAdmin(fromId, agency.id);
-  if (!admin) {
-    void enqueueGroupSend(chatId, '❌ Aucun administrateur trouvé. / No admin found.', {
-      threadId, kind: 'critical'
-    });
-    return;
-  }
-  const cb = parseAgentCallback(data);
-  if (!cb) return;
-  if (cb.kind === 'main') {
-    await setAgentSession(agency.id, { agent_kind: 'main', lead_id: null });
-    void enqueueGroupSend(chatId, '✅ Agent : 🤖 Main', { threadId, kind: 'critical' });
-    return;
-  }
-  const lead = await getLeadById(cb.leadId);
-  if (!lead || lead.agency_id !== agency.id) {
-    void enqueueGroupSend(chatId, '❌ Lead invalide.', { threadId, kind: 'critical' });
-    return;
-  }
-  await setAgentSession(agency.id, { agent_kind: 'operator', lead_id: cb.leadId });
-  void enqueueGroupSend(chatId, `✅ Agent : ${formatAgentLabel({ agent_kind: 'operator', lead_id: cb.leadId }, lead.name)}`, { threadId, kind: 'critical' });
-}
+// handleAgentCallback is now in lib/telegram/handle-agent-callback.ts
+export { handleAgentCallback } from '@/lib/telegram/handle-agent-callback';

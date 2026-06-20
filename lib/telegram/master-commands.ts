@@ -8,25 +8,27 @@
  * by normalising '-' → '_' so both /lead_history and the hyphen form work.
  */
 import { enqueueGroupSend } from '@/lib/telegram/group-send-queue';
+import { sendTelegramKeyboard } from '@/lib/telegram/send-keyboard';
 import {
   listLeads,
   getConversationByLeadId,
   getVisibleMessages,
-  listAnonymousVisitorThreads
+  listAnonymousVisitorThreads,
 } from '@/lib/db';
+import { buildLeadsKeyboard, buildLeadPickerKeyboard } from '@/lib/telegram/agent-command';
 import type { Agency } from '@/lib/db/agencies';
 import type { Lead } from '@/lib/types';
 
 const HELP = [
   '🛠 Commandes disponibles / Available commands:',
-  '/agent — changer d’agent (main ↔ opérateur d’un lead)',
+  "/agent — changer d’agent (main ↔ opérateur d’un lead)",
   '/leads [hot|warm|cold|active|qualified|booked|handoff] — liste des leads',
-  '/lead <nom|email> — détail d’un lead',
-  '/lead_history <nom|email> — historique de conversation d’un lead',
+  "/lead <nom|email> — détail d’un lead",
+  "/lead_history [nom|email] — historique de conversation d’un lead",
   '/pool — visiteurs anonymes (non identifiés)',
   '/help — cette aide',
   '',
-  '💬 Tapez du texte normal pour discuter avec l’agent actif.'
+  "💬 Tapez du texte normal pour discuter avec l’agent actif.",
 ].join('\n');
 
 // Telegram hard caps a message at 4096 chars.
@@ -45,6 +47,10 @@ function leadLine(l: Lead): string {
   const who = l.name ?? l.email ?? l.id.slice(0, 8);
   const pot = l.potential_status ? `/${l.potential_status}` : '';
   return `• ${who} — ${l.status}${pot}`;
+}
+
+function leadButtons(leads: Lead[]) {
+  return leads.map((l) => ({ id: l.id, label: l.name ?? l.email ?? l.id.slice(0, 8) }));
 }
 
 /**
@@ -78,10 +84,16 @@ export async function tryHandleMasterCommand(
         const f = arg.toLowerCase();
         leads = leads.filter((l) => l.status === f || l.potential_status === f);
       }
-      const body = leads.length
-        ? leads.slice(0, 30).map(leadLine).join('\n')
-        : '(aucun lead)';
-      reply(`👥 Leads${arg ? ` [${arg}]` : ''} (${leads.length}):\n${body}`);
+      if (!leads.length) {
+        reply(`👥 Leads${arg ? ` [${arg}]` : ''}: (aucun lead)`);
+        return true;
+      }
+      await sendTelegramKeyboard(
+        chatId,
+        `👥 Leads${arg ? ` [${arg}]` : ''} (${leads.length}) — cliquez pour détail :`,
+        buildLeadsKeyboard(leadButtons(leads), { page: 0, status: arg }),
+        threadId
+      );
       return true;
     }
 
@@ -96,14 +108,25 @@ export async function tryHandleMasterCommand(
         Object.keys(lead.qual_values ?? {}).length
           ? `Qualif: ${JSON.stringify(lead.qual_values)}`
           : null,
-        lead.persona ? `Persona: ${lead.persona.slice(0, 400)}` : null
+        lead.persona ? `Persona: ${lead.persona.slice(0, 400)}` : null,
       ].filter(Boolean);
       reply(lines.join('\n'));
       return true;
     }
 
     case '/lead_history': {
-      if (!arg) return reply('Usage: /lead_history <nom|email>'), true;
+      if (!arg) {
+        // No name given → show an inline keyboard to pick which lead.
+        const leads = await listLeads(agency.id);
+        if (!leads.length) { reply('(aucun lead)'); return true; }
+        await sendTelegramKeyboard(
+          chatId,
+          '📜 Choisissez un lead pour voir son historique :',
+          buildLeadPickerKeyboard(leadButtons(leads)),
+          threadId
+        );
+        return true;
+      }
       const lead = findLead(await listLeads(agency.id), arg);
       if (!lead) return reply(`❌ Lead introuvable : "${arg}"`), true;
       const conv = await getConversationByLeadId(lead.id);
@@ -120,8 +143,12 @@ export async function tryHandleMasterCommand(
     case '/pool': {
       const threads = await listAnonymousVisitorThreads(agency.id);
       const body = threads.length
-        ? threads.slice(0, 30)
-            .map((t) => `• ${t.id.slice(0, 8)} — ${t.primary_channel} — ${t.listing_id ?? 'sans annonce'}`)
+        ? threads
+            .slice(0, 30)
+            .map(
+              (t) =>
+                `• ${t.id.slice(0, 8)} — ${t.primary_channel} — ${t.listing_id ?? 'sans annonce'}`
+            )
             .join('\n')
         : '(pool vide)';
       reply(`👻 Visiteurs anonymes (${threads.length}):\n${body}`);

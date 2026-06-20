@@ -142,7 +142,7 @@ export async function handleTelegramUpdate(
     // Single-topic UX: handle the /agent inline-keyboard tap wherever it was
     // posted (General or any thread) — reply goes back to that same thread.
     if (agency) {
-      await handleAgentCallback(chatId, agency, fromId, data, threadId);
+      await handleAgentCallback(chatId, agency, fromId, data, threadId, cq.id);
       return 'group';
     }
     return 'ignored';
