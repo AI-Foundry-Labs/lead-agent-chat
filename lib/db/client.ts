@@ -27,5 +27,9 @@ export const {
   lead_telegram_link_tokens,
   agency_telegram_link_tokens,
   lead_telegram_topics,
-  telegram_agent_sessions
+  telegram_agent_sessions,
+  message_templates,
+  lead_consents,
+  audit_log,
+  scheduled_messages
 } = schema;
