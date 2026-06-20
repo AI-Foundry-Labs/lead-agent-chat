@@ -18,8 +18,24 @@ lib/
 ├── agent/
 │   ├── run.ts                   # runAgentTurn — stateless-per-turn loop (tool-calling, dispatch hooks)
 │   ├── tools/
+│   │   ├── main-assistant/
+│   │   │   ├── index.ts         # Barrel: merges all capability group tools
+│   │   │   ├── leads.ts         # Lead CRUD tools
+│   │   │   ├── listings.ts      # Listing query tools
+│   │   │   ├── messaging.ts     # search_messages (extended w/ channel filter)
+│   │   │   ├── viewings.ts      # Viewing slot tools
+│   │   │   ├── config.ts        # Agency config tools
+│   │   │   ├── telegram.ts      # Telegram-specific tools
+│   │   │   ├── analytics.ts     # Agency analytics
+│   │   │   ├── subagents.ts     # Subagent dispatch tools
+│   │   │   ├── templates.ts     # F4b: message template CRUD + render
+│   │   │   ├── visitor-pool.ts  # F1: anonymous visitor pool tools
+│   │   │   ├── gdpr.ts          # F4d: consent + audit + erasure tools
+│   │   │   └── scheduled-messages.ts  # F4a: schedule/list/cancel tools
 │   │   ├── lead-tools.ts        # record_qualification, book_viewing, etc. (Zod-validated)
 │   │   └── admin-tools.ts       # update_criteria, send_reply, etc.
+│   ├── templates/               # F4b: template rendering engine
+│   │   └── render-template.ts   # Pure placeholder substitution ({{name}}, {{email}}, etc.)
 │   └── prompts.ts               # buildLeadSystemPrompt, buildAdminSystemPrompt
 │
 ├── telegram/
@@ -32,9 +48,15 @@ lib/
 │   ├── resolve-agency-admin.ts  # Telegram sender → admin lookup (with rejection on unmapped)
 │   └── lead-topics.ts           # Create/manage forum topics per lead
 │
+├── scheduling/
+│   ├── deliver-due-scheduled-messages.ts  # F4a: claim-and-deliver loop (FOR UPDATE SKIP LOCKED)
+│   ├── scheduled-message-loop.ts          # Polling interval driver
+│   └── paris-time.ts                      # Europe/Paris ↔ UTC conversion (Intl-based)
+│
 ├── agency-context.ts            # Host/subdomain → agency resolver (middleware data)
 ├── telegram.ts                  # Low-level Telegram API wrapper (sendTelegramMessage, etc.)
 ├── dispatch.ts                  # Mirror dispatch hooks for agent replies (mirrorLeadTurnToTopic)
+├── instrumentation.ts           # Scheduler registration hook (gated by RUN_SCHEDULER env)
 ├── [other modules]              # calendar.ts, email.ts, events.ts, notify.ts, etc.
 │
 app/
@@ -83,6 +105,24 @@ env.example                      # Set TELEGRAM_WEBHOOK_SECRET, DATABASE_URL, et
 | `scripts/migrate-add-agency.ts` | Migration: add `agencies` table + `agency_id` FK + backfill. |
 | `middleware.ts` (modified) | Set `x-agency-id` header (server-resolved, client-supplied stripped). |
 
+## New Capability Group Files (June 20, 2026: F1, F4a–d)
+
+| File | Capability | Purpose |
+|------|-----------|---------|
+| `lib/db/message-templates.ts` | F4b | Create/update/delete reusable message templates per agency. |
+| `lib/db/consents.ts` | F4d | Record/retrieve consent state (GDPR basis tracking). |
+| `lib/db/audit-helpers.ts` | F4d | `recordAudit` (call-site helper, best-effort, non-blocking). |
+| `lib/db/audit-log.ts` | F4d | Query audit history for lead (Art. 15). |
+| `lib/db/scheduled-messages.ts` | F4a | Schedule/list/cancel message delivery (with retry state). |
+| `lib/agent/tools/main-assistant/templates.ts` | F4b | List/get/create/update/delete/render message templates. |
+| `lib/agent/tools/main-assistant/visitor-pool.ts` | F1 | List/read/identify anonymous visitors. Reuses `promoteAnonymousVisitor`. |
+| `lib/agent/tools/main-assistant/gdpr.ts` | F4d | set_consent, view_consent_status, view_audit_history, export_lead_data (Art. 15). |
+| `lib/agent/tools/main-assistant/scheduled-messages.ts` | F4a | schedule_message, list_scheduled_messages, cancel_scheduled_message (Paris timezone). |
+| `lib/agent/templates/render-template.ts` | F4b | Pure placeholder renderer: `{{name}}`, `{{email}}`, `{{listing_title}}`, `{{agency_name}}`. |
+| `lib/scheduling/deliver-due-scheduled-messages.ts` | F4a | Claim-and-deliver loop (FOR UPDATE SKIP LOCKED, at-least-once, retry ≤3). |
+| `lib/scheduling/scheduled-message-loop.ts` | F4a | Polling interval driver (~30s). |
+| `lib/scheduling/paris-time.ts` | F4a | Europe/Paris ↔ UTC conversion (Intl-based, no new dependencies). |
+
 ## Core Tables (Schema)
 
 ```
@@ -128,6 +168,39 @@ lead_telegram_topics
 
 handoff_rules, agency_config, viewing_slots
   [all have agency_id FK]
+
+message_templates (F4b)
+  id UUID PK
+  agency_id UUID FK → agencies
+  name TEXT
+  content TEXT (with {{}} placeholders)
+  created_at TIMESTAMP
+
+lead_consents (F4d)
+  id UUID PK
+  lead_id UUID FK → leads (CASCADE on delete)
+  agency_id UUID FK → agencies
+  basis TEXT (legal basis for processing)
+  granted_at TIMESTAMP
+
+audit_log (F4d)
+  id UUID PK
+  target_lead_id UUID (NO FK — survives lead erasure)
+  agency_id UUID FK → agencies
+  action TEXT (lead_viewed, lead_updated, message_sent, lead_erasure_executed, etc.)
+  recorded_at TIMESTAMP
+  metadata JSONB (optional context)
+
+scheduled_messages (F4a)
+  id UUID PK
+  conversation_id UUID FK → conversations
+  agency_id UUID FK → agencies
+  content TEXT
+  send_at TIMESTAMP (Europe/Paris)
+  status ENUM ('pending', 'sent', 'failed')
+  attempt_count INT (0–3)
+  created_at TIMESTAMP
+  sent_at TIMESTAMP (nullable)
 ```
 
 ## Authorization Boundaries

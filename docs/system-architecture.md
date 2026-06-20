@@ -206,6 +206,41 @@ When `conversations.mode` changes to `manual` (handoff occurs):
        └────────────────────────────────┘
 ```
 
+## Main Assistant Capabilities (June 20, 2026)
+
+Five new tool domains extend the `main_assistant` agent (`lib/agent/tools/main-assistant/`):
+
+| Domain | Tools | Purpose |
+|--------|-------|---------|
+| **Templates** (F4b) | `list_message_templates`, `get_template`, `create_template`, `update_template`, `delete_template`, `render_template` | Reusable message library with `{{name}}`, `{{email}}`, `{{listing_title}}`, `{{agency_name}}` placeholders. Unresolved placeholders left literal + warned. |
+| **Visitor Pool** (F1) | `list_visitor_pool`, `read_visitor_thread`, `identify_visitor` | Anonymous visitor management. Identification requires name OR email; ephemeral if neither. No merge. |
+| **Telegram Search** (F4c) | `search_messages` (extended) | Extended search with channel filter ('web'|'email'|'telegram'|'all'). Tags results with `surface: 'dm'` or `'group'`. Fixed cross-agency leak. |
+| **GDPR Consent** (F4d) | `set_consent`, `view_consent_status`, `view_audit_history`, `export_lead_data` | Consent management + compliance audit. Audit is append-only; erasure is hard-delete with no PII trace. |
+| **Scheduled Messages** (F4a) | `schedule_message`, `list_scheduled_messages`, `cancel_scheduled_message` | Schedule messages in Europe/Paris timezone. Delivery via background loop (gated by `RUN_SCHEDULER` env). At-least-once, retry cap 3, uses `FOR UPDATE SKIP LOCKED` for multi-instance safety. Telegram group messages cannot be remotely deleted on erasure (documented limitation). |
+
+All tools are scoped by `agency_id` and registered in `lib/agent/tools/main-assistant/index.ts` (barrel).
+
+## Scheduler Infrastructure (Instrumentation Loop)
+
+The scheduler runs inside the Next.js app process:
+- **Host:** `lib/instrumentation.ts` `register()` hook (runs in dev + prod).
+- **Gated by:** Env `RUN_SCHEDULER` (default off; enable on exactly one app instance).
+- **Safety:** `FOR UPDATE SKIP LOCKED` ensures multi-instance safety.
+- **Interval:** Polls due scheduled messages every ~30s.
+- **Error handling:** Retry up to 3 attempts with exponential backoff before marking failed.
+
+Prod docker-compose has only `db` + `app`; the scheduler runs in the app server (no separate worker needed).
+
+## Database Migrations (Idempotent Schema)
+
+Schema evolution uses idempotent migrations in `drizzle/`:
+
+| Migration | Tables | Date |
+|-----------|--------|------|
+| `0002_sweet_cannonball.sql` | Catch-up baseline (idempotent) + `message_templates`, `lead_consents`, `audit_log`, `scheduled_messages` | 2026-06-20 |
+
+**Key change:** Migrations now use `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, guarded constraints for safety on partial schema state. Docker entrypoint runs migrate from a BAKED `/migrate` image copy, so schema changes require `docker compose build` to reach boot.
+
 ## Key Files
 
 - `lib/agency-context.ts` — Host → agency resolver.
@@ -215,6 +250,10 @@ When `conversations.mode` changes to `manual` (handoff occurs):
 - `lib/db/lead-telegram-topics.ts` — Per-lead topic storage.
 - `lib/telegram/{route-group-message,group-send-queue,handle-lead-telegram-update,notify-agency,verify-agency-group}.ts` — Telegram group handlers & queue.
 - `app/api/admin/*` — IDOR guards on all resource loads.
+- `lib/db/{message-templates,audit-helpers,consents,audit-log,scheduled-messages}.ts` — F4a–d helpers.
+- `lib/agent/tools/main-assistant/{templates,visitor-pool,gdpr,scheduled-messages}.ts` — F4a–d tools.
+- `lib/scheduling/{deliver-due-scheduled-messages,scheduled-message-loop,paris-time}.ts` — Scheduler loop + delivery + timezone.
+- `lib/instrumentation.ts` — Scheduler registration (gated by `RUN_SCHEDULER`).
 
 ## Security Fixes Included (June 13, 2026)
 
