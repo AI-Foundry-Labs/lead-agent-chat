@@ -20,7 +20,7 @@ import type { Agency } from '@/lib/db/agencies';
 import type { Lead } from '@/lib/types';
 
 const HELP = [
-  '🛠 Commandes disponibles / Available commands:',
+  '🛠 Commandes disponibles :',
   "/agent — changer d’agent (main ↔ opérateur d’un lead)",
   '/leads [hot|warm|cold|active|qualified|booked|handoff] — liste des leads',
   "/lead <nom|email> — détail d’un lead",
@@ -44,13 +44,13 @@ function findLead(leads: Lead[], query: string): Lead | undefined {
 }
 
 function leadLine(l: Lead): string {
-  const who = l.name ?? l.email ?? l.id.slice(0, 8);
+  const who = l.name ?? l.email ?? 'Anonymous';
   const pot = l.potential_status ? `/${l.potential_status}` : '';
   return `• ${who} — ${l.status}${pot}`;
 }
 
 function leadButtons(leads: Lead[]) {
-  return leads.map((l) => ({ id: l.id, label: l.name ?? l.email ?? l.id.slice(0, 8) }));
+  return leads.map((l) => ({ id: l.id, label: l.name ?? l.email ?? 'Anonymous' }));
 }
 
 /**

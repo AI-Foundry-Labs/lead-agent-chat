@@ -73,7 +73,7 @@ export async function handleLeadStart(
 
   await sendTelegramMessage(
     chatId,
-    "✅ Telegram lié. Ceci est un fil séparé du site — vos préférences et qualifications sont partagées, mais l'historique de chat ici repart à zéro.\n\n✅ Telegram linked. This is a separate thread from the website — your preferences are shared, but chat history here starts fresh.\n\nPosez votre question sur le bien / Ask your question about the property."
+    "✅ Telegram lié. Ceci est un fil séparé du site — vos préférences et qualifications sont partagées, mais l'historique de chat ici repart à zéro.\n\nPosez votre question sur le bien."
   );
   return true;
 }
@@ -100,7 +100,7 @@ export async function handleAdminMessage(
 
   if (cmd.kind === 'show') {
     const leads = (await listLeads(agency.id)).map((l) => ({
-      id: l.id, label: l.name ?? l.email ?? l.id.slice(0, 8),
+      id: l.id, label: l.name ?? l.email ?? 'Anonymous',
     }));
     const session = await getAgentSession(agency.id);
     const activeLeadId = session?.agent_kind === 'operator' ? session.lead_id : null;
@@ -108,7 +108,7 @@ export async function handleAdminMessage(
       ? (await getLeadById(activeLeadId))?.name : null);
     await sendTelegramKeyboard(
       chatId,
-      `Actuel : ${current}\nChoisissez l'agent : / Choose agent:`,
+      `Actuel : ${current}\nChoisissez l'agent :`,
       buildAgentKeyboard(leads, { activeLeadId })
     );
     return true;
