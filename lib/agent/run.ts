@@ -12,13 +12,12 @@ import {
   listActiveHandoffRules
 } from '@/lib/db';
 import { broadcastConversationUpdate } from '@/lib/events';
-import { dispatchReply, mirrorLeadTurnToTopic } from '@/lib/dispatch';
-import { notifyAdminsInChat } from '@/lib/notify';
-import { notifyAgency } from '@/lib/telegram/notify-agency';
+import { dispatchReply } from '@/lib/dispatch';
+import { reportTurnToTopic } from '@/lib/agent/report-turn-to-topic';
 import { matchRule } from '@/lib/agent/rules';
 import { reportHandoffBriefing } from '@/lib/agent/report-handoff-briefing';
 import { detectMessageLang } from '@/lib/agent/detect-lang';
-import { notif } from '@/lib/agent/notification-strings';
+import { pushAgentNotification } from '@/lib/agent/push-agent-notification';
 import { buildLeadSystemPrompt } from '@/lib/agent/prompts';
 import { buildOperatorSystemPrompt } from '@/lib/agent/prompts/operator-prompts';
 import { buildCrossThreadContextBlock } from '@/lib/agent/cross-thread-context';
@@ -28,8 +27,9 @@ import {
 } from '@/lib/agent/thread-memory';
 import { buildLeadTools } from '@/lib/agent/tools/lead-tools';
 import { buildOperatorTools } from '@/lib/agent/tools/operator-tools';
-import { buildMainAssistantTools } from '@/lib/agent/tools/main-assistant-tools';
+import { buildMainAssistantTools } from '@/lib/agent/tools/main-assistant';
 import { buildMainAssistantSystemPrompt } from '@/lib/agent/prompts/main-assistant-prompt';
+import { getAdminById } from '@/lib/db/admins';
 import type { AgentContext } from '@/lib/agent/tools/context';
 import type { Conversation, Language } from '@/lib/types';
 import { agentLog } from '@/lib/logger';
@@ -98,13 +98,8 @@ export async function runAgentTurn(
       content: message
     });
     broadcastConversationUpdate(conversationId);
-
-    // Mirror lead user messages into Topic 1 (non-blocking; failure must not break turn).
-    if (actor.type === 'lead') {
-      await mirrorLeadTurnToTopic(conversation, 'lead', message).catch((e) =>
-        agentLog.warn('agent.mirror.lead.error', { conversationId, error: String(e) })
-      );
-    }
+    // Note: the lead's inbound message is no longer mirrored verbatim here — it is
+    // folded into the per-turn report posted after the agent replies (see below).
   }
 
   // Detect lead's actual message language (runs in background; defaults to 'fr').
@@ -113,16 +108,17 @@ export async function runAgentTurn(
     ? await detectMessageLang(message)
     : lang;
 
-  const n = notif(detectedLang);
-
   // Takeover safety: a lead conversation in manual mode does not auto-reply.
   if (conversation.type === 'lead' && conversation.mode === 'manual') {
     agentLog.info('agent.manual_mode', { conversationId, messageLen: message.length });
-    const manualSummary = n.manual(message.slice(0, 300));
     if (conversation.lead_id) {
-      void notifyAgency(conversation.agency_id, conversation.lead_id, manualSummary);
+      void pushAgentNotification({
+        agencyId: conversation.agency_id,
+        leadId: conversation.lead_id,
+        event: { kind: 'manual', message: message.slice(0, 300) },
+        lang: detectedLang
+      });
     }
-    await notifyAdminsInChat(manualSummary);
     return { conversation, reply: '', status: 'manual' };
   }
 
@@ -138,9 +134,13 @@ export async function runAgentTurn(
         agentLog.info('agent.handoff', { conversationId, rule: matched.description, leadId: conversation.lead_id });
         if (conversation.lead_id)
           await updateLead(conversation.lead_id, { status: 'handoff' });
-        const handoffSummary = n.handoff(matched.description, message.slice(0, 160));
         if (conversation.lead_id) {
-          void notifyAgency(conversation.agency_id, conversation.lead_id, handoffSummary);
+          void pushAgentNotification({
+            agencyId: conversation.agency_id,
+            leadId: conversation.lead_id,
+            event: { kind: 'handoff', rule: matched.description, message: message.slice(0, 300) },
+            lang: detectedLang
+          });
         }
         // Lead reports up: generate a briefing from this lead's own context and post it
         // into the admin's main_assistant panel (fire-and-forget — no separate operator agent).
@@ -155,7 +155,12 @@ export async function runAgentTurn(
   let system: string;
   let tools;
   if (actor.type === 'main_assistant') {
-    system = await buildMainAssistantSystemPrompt({ config, adminName: actor.adminName });
+    const adminRow = await getAdminById(actor.adminId);
+    system = await buildMainAssistantSystemPrompt({
+      config,
+      adminName: actor.adminName,
+      adminPersona: adminRow?.persona ?? null,
+    });
     tools = buildMainAssistantTools(ctx, actor.adminId, actor.adminName, runAgentTurn as Parameters<typeof buildMainAssistantTools>[3]);
   } else if (actor.type === 'operator') {
     const lead = actor.leadId ? await getLeadById(actor.leadId) : null;
@@ -263,9 +268,16 @@ export async function runAgentTurn(
   }
 
   if (actor.type === 'lead') {
-    // Mirror FINAL agent reply into Topic 1 (non-blocking; failure must not break turn).
-    await mirrorLeadTurnToTopic(ctx.conversation, 'agent', storedContent).catch((e) =>
-      agentLog.warn('agent.mirror.agent.error', { conversationId, error: String(e) })
+    // Post a report-style summary of this turn into the conversation topic so staff
+    // read an internal "report to the boss" instead of the verbatim customer reply.
+    // Uses the agency language (lang), not the lead's detected language.
+    await reportTurnToTopic({
+      conversation: ctx.conversation,
+      leadMessage: message,
+      agentReply: storedContent,
+      lang
+    }).catch((e) =>
+      agentLog.warn('agent.report.turn.error', { conversationId, error: String(e) })
     );
     scheduleThreadMemorySummarize(conversationId);
   }

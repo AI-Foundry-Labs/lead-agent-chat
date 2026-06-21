@@ -14,19 +14,24 @@ import {
   bindTelegramToAdmin,
   getAdminByTelegramUserId,
   getOrCreateMainAssistant,
+  getOrCreateLeadOperator,
   getConversation,
   getOrCreateLeadTelegramConversation,
   getMostRecentLeadTelegramConversation,
   bindTelegramToLead,
   getLeadByTelegramUserId,
   updateConversation,
-  db,
-  admins
+  getAgencyById,
+  listLeads,
+  getLeadById,
 } from '@/lib/db';
-import { eq } from 'drizzle-orm';
 import { ensureLeadForConversation } from '@/lib/telegram/ensure-lead-for-conversation';
 import { sendTelegramMessage } from '@/lib/telegram';
+import { sendTelegramKeyboard } from '@/lib/telegram/send-keyboard';
 import { runAgentTurn } from '@/lib/agent/run';
+import { tryHandleMasterCommand } from '@/lib/telegram/master-commands';
+import { parseAgentCommand, buildAgentKeyboard, formatAgentLabel } from '@/lib/telegram/agent-command';
+import { getAgentSession, setAgentSession, resolveActiveActor } from '@/lib/db/telegram-agent-sessions';
 
 export async function handleAdminStart(
   chatId: string,
@@ -81,19 +86,73 @@ export async function handleAdminMessage(
   const admin = await getAdminByTelegramUserId(fromId);
   if (!admin) return false;
 
-  const [adminRow] = await db
-    .select({ agency_id: admins.agency_id })
-    .from(admins)
-    .where(eq(admins.id, admin.id))
-    .limit(1);
-  if (!adminRow) return false;
+  const agency = await getAgencyById(admin.agency_id);
+  if (!agency) return false;
 
-  const conv = await getOrCreateMainAssistant(admin.id, adminRow.agency_id);
-  await runAgentTurn(conv.id, text, {
-    type: 'main_assistant',
-    adminId: admin.id,
-    adminName: admin.name
+  const send = (msg: string) => void sendTelegramMessage(chatId, msg);
+
+  // Slash commands (/help, /leads, /lead, /lead_history, /pool)
+  if (await tryHandleMasterCommand(chatId, agency, undefined, text, send)) return true;
+
+  // /agent command — show picker or set active agent
+  const normalizedText = text.replace(/^(\/\w+)@\S+/, '$1');
+  const cmd = parseAgentCommand(normalizedText);
+
+  if (cmd.kind === 'show') {
+    const leads = (await listLeads(agency.id)).map((l) => ({
+      id: l.id, label: l.name ?? l.email ?? l.id.slice(0, 8),
+    }));
+    const session = await getAgentSession(agency.id);
+    const activeLeadId = session?.agent_kind === 'operator' ? session.lead_id : null;
+    const current = formatAgentLabel(session, activeLeadId
+      ? (await getLeadById(activeLeadId))?.name : null);
+    await sendTelegramKeyboard(
+      chatId,
+      `Actuel : ${current}\nChoisissez l'agent : / Choose agent:`,
+      buildAgentKeyboard(leads, { activeLeadId })
+    );
+    return true;
+  }
+
+  if (cmd.kind === 'set_main') {
+    await setAgentSession(agency.id, { agent_kind: 'main', lead_id: null });
+    send('✅ Agent : 🤖 Main');
+    return true;
+  }
+
+  if (cmd.kind === 'set_lead') {
+    const q = cmd.query.toLowerCase();
+    const match = (await listLeads(agency.id)).find(
+      (l) => (l.name ?? '').toLowerCase().includes(q) || (l.email ?? '').toLowerCase().includes(q)
+    );
+    if (!match) { send(`❌ Lead introuvable : "${cmd.query}"`); return true; }
+    await setAgentSession(agency.id, { agent_kind: 'operator', lead_id: match.id });
+    send(`✅ Agent : ${formatAgentLabel({ agent_kind: 'operator', lead_id: match.id }, match.name)}`);
+    return true;
+  }
+
+  // Plain text → dispatch to active agent session
+  const session = await getAgentSession(agency.id);
+  const actor = resolveActiveActor(session);
+
+  if (actor?.type === 'operator') {
+    const conv = await getOrCreateLeadOperator(actor.leadId, agency.id);
+    const lead = await getLeadById(actor.leadId);
+    const result = await runAgentTurn(conv.id, text, {
+      type: 'operator', leadId: actor.leadId, adminId: admin.id, adminName: admin.name ?? null,
+    });
+    if (result.reply.trim()) {
+      send(`${formatAgentLabel(session, lead?.name)} — ${result.reply}`);
+    }
+    return true;
+  }
+
+  // Default: main_assistant
+  const conv = await getOrCreateMainAssistant(admin.id, agency.id);
+  const result = await runAgentTurn(conv.id, text, {
+    type: 'main_assistant', adminId: admin.id, adminName: admin.name ?? null,
   });
+  if (result.reply.trim()) send(result.reply);
   return true;
 }
 

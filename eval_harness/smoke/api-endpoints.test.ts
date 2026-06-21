@@ -82,31 +82,31 @@ describe('GET /api/chat — input validation', () => {
 });
 
 describe('Admin API — auth enforcement', () => {
-  it('POST /api/admin/operator/message returns 401 without session', async () => {
-    const res = await post('/api/admin/operator/message', {
+  it('POST /api/admin/operator/chat returns 401 without session', async () => {
+    const res = await post('/api/admin/operator/chat', {
       leadId: 'test',
       message: 'hello'
     });
     assert.equal(res.status, 401);
   });
 
-  it('POST /api/admin/assistant/message returns 401 without session', async () => {
-    const res = await post('/api/admin/assistant/message', { message: 'hello' });
+  it('POST /api/admin/assistant returns 401 without session', async () => {
+    const res = await post('/api/admin/assistant', { message: 'hello' });
     assert.equal(res.status, 401);
   });
 
-  it('GET /api/admin/leads returns 401 without session', async () => {
-    const res = await get('/api/admin/leads');
+  it('GET /api/admin/data returns 401 without session', async () => {
+    const res = await get('/api/admin/data');
     assert.equal(res.status, 401);
   });
 });
 
 describe('SSE endpoint', () => {
-  it('GET /api/events returns 200 with text/event-stream content type', async () => {
-    const res = await get('/api/events');
-    // SSE endpoint may need a conversationId param — without it still checks auth/routing
+  it('GET /api/admin/stream enforces auth / param (401 or 400)', async () => {
+    const res = await get('/api/admin/stream');
+    // Without a session/param it returns 400 (missing param) or 401 (auth) — never 200/500.
     assert.ok(
-      [200, 400].includes(res.status),
+      [200, 400, 401].includes(res.status),
       `unexpected status ${res.status}`
     );
   });

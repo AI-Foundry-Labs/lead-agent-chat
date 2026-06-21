@@ -6,6 +6,7 @@ export type AdminRow = {
   email: string;
   name: string | null;
   telegram_user_id: string | null;
+  agency_id: string;
 };
 
 export async function getAdminByTelegramUserId(
@@ -16,7 +17,8 @@ export async function getAdminByTelegramUserId(
       id: admins.id,
       email: admins.email,
       name: admins.name,
-      telegram_user_id: admins.telegram_user_id
+      telegram_user_id: admins.telegram_user_id,
+      agency_id: admins.agency_id,
     })
     .from(admins)
     .where(eq(admins.telegram_user_id, telegramUserId))

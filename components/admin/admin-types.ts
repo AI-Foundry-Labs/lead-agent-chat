@@ -33,6 +33,7 @@ export type AdminData = {
   criteria: Criterion[];
   config: { name: string; tone: string } | null;
   rules: HandoffRule[];
+  adminPersona: string | null;
 };
 
 export const POTENTIAL_COLOR: Record<string, string> = {

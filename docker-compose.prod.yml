@@ -43,6 +43,9 @@ services:
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Camille}
       RUN_DB_PUSH: "true"
       RUN_DB_SEED: ${RUN_DB_SEED:-true}
+      # F4a: deliver scheduled messages from this (single) prod app instance.
+      # If scaling app >1, set this on exactly ONE replica (loop is also SKIP-LOCKED safe).
+      RUN_SCHEDULER: ${RUN_SCHEDULER:-1}
     ports:
       - "3031:3000"
 

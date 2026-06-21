@@ -11,7 +11,7 @@ export async function detectMessageLang(text: string): Promise<Language> {
   try {
     const { text: result } = await generateText({
       model: FAST_MODEL,
-      system: 'Detect language. Reply with only "fr" or "en". Default to "fr" if uncertain or mixed.',
+      system: 'Identify the language of this message. Reply with ONLY "en" if the message is written in English, or "fr" if it is written in French or is ambiguous. No other output.',
       messages: [{ role: 'user', content: text.slice(0, 300) }]
     });
     return result.trim().toLowerCase() === 'en' ? 'en' : 'fr';

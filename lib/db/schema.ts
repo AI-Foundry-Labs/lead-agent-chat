@@ -127,8 +127,6 @@ export const leads = pgTable(
     score_reason: text('score_reason'),
     // Cross-thread visitor memory (modest cap enforced in app layer).
     long_term_memory: text('long_term_memory'),
-    // Freeform agent/admin-written profile of the lead (editable in admin UI).
-    persona: text('persona'),
     // Set when the visitor links Telegram via /start <token> from the site.
     telegram_user_id: varchar('telegram_user_id', { length: 50 }),
     // Per-agency sequence number assigned when an anonymous visitor is promoted
@@ -248,6 +246,8 @@ export const admins = pgTable(
     name: varchar('name', { length: 255 }),
     telegram_user_id: varchar('telegram_user_id', { length: 50 }),
     preferred_lang: varchar('preferred_lang', { length: 2 }).default('fr').notNull(),
+    // How the bot should address / interact with this admin (tone, style, context).
+    persona: text('persona'),
     created_at: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -419,5 +419,118 @@ export const telegram_link_tokens = pgTable(
   (t) => ({
     admin_idx: index('telegram_link_tokens_admin_idx').on(t.admin_id),
     expires_idx: index('telegram_link_tokens_expires_idx').on(t.expires_at)
+  })
+);
+
+// ─── Telegram agent hub session (one active subagent per agency) ────────────
+// agent_kind='main' → main-assistant; agent_kind='operator' → operator for lead_id.
+export const telegram_agent_sessions = pgTable('telegram_agent_sessions', {
+  agency_id: uuid('agency_id')
+    .primaryKey()
+    .references(() => agencies.id, { onDelete: 'cascade' }),
+  agent_kind: varchar('agent_kind', { length: 20 }).notNull(), // 'main' | 'operator'
+  lead_id: uuid('lead_id').references(() => leads.id, { onDelete: 'set null' }),
+  updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+});
+
+// ─── Message templates (F4b — agency-owned reusable message bodies) ─────────
+// Templates carry {{placeholder}} tokens (whitelist: name/email/listing_title/
+// agency_name) filled at render time. Agency-scoped config, not per-lead.
+export const message_templates = pgTable(
+  'message_templates',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    agency_id: uuid('agency_id').notNull().references(() => agencies.id),
+    title: varchar('title', { length: 255 }).notNull(),
+    body: text('body').notNull(),
+    created_at: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull()
+  },
+  (t) => ({
+    agency_idx: index('message_templates_agency_idx').on(t.agency_id)
+  })
+);
+
+// ─── Lead consents (F4d — GDPR/CNIL data-processing consent, append-only) ────
+// Each grant/withdrawal is a new row; current state = latest row per (lead, type).
+// Cascades on lead delete so erasure removes consent PII too.
+export const lead_consents = pgTable(
+  'lead_consents',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    agency_id: uuid('agency_id').notNull().references(() => agencies.id),
+    lead_id: uuid('lead_id')
+      .notNull()
+      .references(() => leads.id, { onDelete: 'cascade' }),
+    consent_type: varchar('consent_type', { length: 20 }).notNull(), // data_processing | marketing | phone_contact
+    granted: boolean('granted').notNull(),
+    source: varchar('source', { length: 50 }), // e.g. 'phone', 'web_form', 'email'
+    recorded_by: uuid('recorded_by'), // admin id (nullable — may be system)
+    notes: text('notes'),
+    recorded_at: timestamp('recorded_at', { withTimezone: true })
+      .defaultNow()
+      .notNull()
+  },
+  (t) => ({
+    lead_idx: index('lead_consents_lead_idx').on(t.agency_id, t.lead_id)
+  })
+);
+
+// ─── Audit log (F4d — who accessed/modified a lead and when) ─────────────────
+// target_lead_id has NO FK on purpose so an erasure audit row survives the lead's
+// deletion. action is a free string (extensible, no enum churn). Best-effort writes.
+export const audit_log = pgTable(
+  'audit_log',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    agency_id: uuid('agency_id').notNull().references(() => agencies.id),
+    admin_id: uuid('admin_id'), // nullable — system/agent actions have none
+    actor_type: varchar('actor_type', { length: 10 }).notNull(), // 'admin' | 'agent' | 'system'
+    action: varchar('action', { length: 50 }).notNull(),
+    target_lead_id: uuid('target_lead_id'), // plain uuid (no FK) — survives erasure
+    details: jsonb('details'),
+    timestamp: timestamp('timestamp', { withTimezone: true })
+      .defaultNow()
+      .notNull()
+  },
+  (t) => ({
+    lead_idx: index('audit_log_lead_idx').on(t.agency_id, t.target_lead_id),
+    time_idx: index('audit_log_time_idx').on(t.agency_id, t.timestamp)
+  })
+);
+
+// ─── Scheduled messages (F4a — future follow-up to a lead) ──────────────────
+// A background loop (gated by RUN_SCHEDULER) delivers pending rows whose send_at
+// has passed. send_at is UTC (admin thinks in Europe/Paris; converted on input).
+// Cascades on lead/conversation delete so erasure cancels pending sends.
+export const scheduled_messages = pgTable(
+  'scheduled_messages',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    agency_id: uuid('agency_id').notNull().references(() => agencies.id),
+    conversation_id: uuid('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    lead_id: uuid('lead_id')
+      .notNull()
+      .references(() => leads.id, { onDelete: 'cascade' }),
+    content: text('content').notNull(),
+    send_at: timestamp('send_at', { withTimezone: true }).notNull(),
+    status: varchar('status', { length: 12 }).default('pending').notNull(), // pending | sent | cancelled | failed
+    created_by: uuid('created_by'), // admin id
+    attempt_count: integer('attempt_count').default(0).notNull(),
+    sent_at: timestamp('sent_at', { withTimezone: true }),
+    error: text('error'),
+    created_at: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull()
+  },
+  (t) => ({
+    due_idx: index('scheduled_messages_due_idx').on(t.status, t.send_at),
+    agency_idx: index('scheduled_messages_agency_idx').on(t.agency_id)
   })
 );
