@@ -5,15 +5,21 @@
  * Handlers:
  *   handleOperatorTopicMessage   — Topic 2 (🤖 Assistant): operator copilot turn.
  *   handleConversationTopicMessage — Topic 1 (💬 Conversation): read-only pointer.
- *   handleMasterTopicMessage     — 🛠 Master topic: routes to main_assistant agent.
+ *   handleMasterTopicMessage     — 🛠 Master topic: /agent hub + subagent dispatch.
+ *   handleAgentCallback          — Inline-keyboard tap (callback_query) in Master topic.
  */
 
 import { enqueueGroupSend } from '@/lib/telegram/group-send-queue';
 import { resolveActingAdmin } from '@/lib/telegram/resolve-agency-admin';
 import { runAgentTurn } from '@/lib/agent/run';
-import { getOrCreateMainAssistant } from '@/lib/db/conversations';
+import { getOrCreateMainAssistant, getOrCreateLeadOperator } from '@/lib/db/conversations';
+import { listLeads, getLeadById } from '@/lib/db';
 import type { LeadTelegramTopics } from '@/lib/db/lead-telegram-topics';
 import type { Agency } from '@/lib/db/agencies';
+import { parseAgentCommand, buildAgentKeyboard, formatAgentLabel } from '@/lib/telegram/agent-command';
+import { getAgentSession, setAgentSession, resolveActiveActor } from '@/lib/db/telegram-agent-sessions';
+import { sendTelegramKeyboard } from '@/lib/telegram/send-keyboard';
+import { tryHandleMasterCommand } from '@/lib/telegram/master-commands';
 
 // ─── Topic 2 (🤖 Assistant): operator copilot turn ────────────────────────
 
@@ -72,61 +78,121 @@ export async function handleConversationTopicMessage(
   void enqueueGroupSend(
     chatId,
     'ℹ️ Ce fil affiche seulement la conversation. Pour répondre au client, ' +
-    "donnez la consigne à l’assistant dans le sujet 🤖 Assistant, ou utilisez l’interface web.\n" +
+    "donnez la consigne à l'assistant dans le sujet 🤖 Assistant, ou utilisez l'interface web.\n" +
     'ℹ️ This thread only shows the conversation. To reply to the customer, instruct the ' +
     'assistant in the 🤖 Assistant topic, or use the web interface.',
     { threadId: mapping.conversation_topic_id, kind: 'critical' }
   );
 }
 
-// ─── 🛠 Master topic: main_assistant routing ──────────────────────────────
+// ─── 🛠 Master topic: /agent hub + subagent dispatch ─────────────────────
 
 /**
- * Route a message from the agency's 🛠 Master topic to the main_assistant agent.
+ * Hub for the agency's 🛠 Master topic.
  *
- * Flow:
- *   1. Resolve acting admin (by TG sender or fallback primary admin).
- *   2. Get-or-create main_assistant conversation for that admin.
- *   3. Run one agent turn with the message text.
- *   4. Post any reply back into the Master topic.
- *
- * A failure posts a short bilingual error into the topic rather than crashing.
+ * Commands:
+ *   /agent          — show inline picker (Main + recent leads)
+ *   /agent main     — set active agent to main_assistant
+ *   /agent lead <q> — set active agent to operator for matching lead
+ *   <plain text>    — dispatch to currently active subagent
  */
 export async function handleMasterTopicMessage(
   chatId: string,
   agency: Agency,
   fromId: string,
   text: string,
-  threadId: number
+  threadId: number | undefined
 ): Promise<void> {
   try {
     const admin = await resolveActingAdmin(fromId, agency.id);
     if (!admin) {
-      void enqueueGroupSend(
+      void enqueueGroupSend(chatId, '❌ Aucun administrateur trouvé. / No admin found.', {
+        threadId, kind: 'critical'
+      });
+      return;
+    }
+
+    // Deterministic read commands (/help, /leads, /lead, /lead_history, /pool).
+    if (await tryHandleMasterCommand(chatId, agency, threadId, text)) return;
+
+    // Strip @botname suffix Telegram appends in group chats (e.g. /agent@bot → /agent).
+    const normalizedText = text.replace(/^(\/\w+)@\S+/, '$1');
+    const cmd = parseAgentCommand(normalizedText);
+
+    // /agent — show picker (Main + all leads, highlight active)
+    if (cmd.kind === 'show') {
+      const allLeads = await listLeads(agency.id);
+      const leads = allLeads.map((l) => ({ id: l.id, label: l.name ?? l.email ?? l.id.slice(0, 8) }));
+      const session = await getAgentSession(agency.id);
+      const activeLeadId = session?.agent_kind === 'operator' ? session.lead_id : null;
+      const current = formatAgentLabel(session, activeLeadId
+        ? (await getLeadById(activeLeadId))?.name : null);
+      await sendTelegramKeyboard(
         chatId,
-        '❌ Aucun administrateur trouvé pour cette agence.\n' +
-        '❌ No admin found for this agency.',
-        { threadId, kind: 'critical' }
+        `Actuel : ${current}\nChoisissez l'agent : / Choose agent:`,
+        buildAgentKeyboard(leads, { activeLeadId }),
+        threadId
       );
       return;
     }
 
-    const conv = await getOrCreateMainAssistant(admin.id, agency.id);
-    const result = await runAgentTurn(
-      conv.id,
-      text,
-      { type: 'main_assistant', adminId: admin.id, adminName: admin.name }
-    );
+    // /agent main
+    if (cmd.kind === 'set_main') {
+      await setAgentSession(agency.id, { agent_kind: 'main', lead_id: null });
+      void enqueueGroupSend(chatId, '✅ Agent : 🤖 Main', { threadId, kind: 'critical' });
+      return;
+    }
 
+    // /agent lead <query>
+    if (cmd.kind === 'set_lead') {
+      const q = cmd.query.toLowerCase();
+      const match = (await listLeads(agency.id)).find(
+        (l) => (l.name ?? '').toLowerCase().includes(q) || (l.email ?? '').toLowerCase().includes(q)
+      );
+      if (!match) {
+        void enqueueGroupSend(chatId, `❌ Lead introuvable : "${cmd.query}"`, { threadId, kind: 'critical' });
+        return;
+      }
+      await setAgentSession(agency.id, { agent_kind: 'operator', lead_id: match.id });
+      void enqueueGroupSend(chatId, `✅ Agent : ${formatAgentLabel({ agent_kind: 'operator', lead_id: match.id }, match.name)}`, { threadId, kind: 'critical' });
+      return;
+    }
+
+    // Plain text → dispatch to active subagent
+    const session = await getAgentSession(agency.id);
+    const actor = resolveActiveActor(session);
+    if (!actor) {
+      void enqueueGroupSend(chatId, 'ℹ️ Aucun agent sélectionné. Tapez /agent pour choisir.', { threadId, kind: 'critical' });
+      return;
+    }
+
+    if (actor.type === 'operator') {
+      const conv = await getOrCreateLeadOperator(actor.leadId, agency.id);
+      const lead = await getLeadById(actor.leadId);
+      const result = await runAgentTurn(conv.id, text, {
+        type: 'operator', leadId: actor.leadId, adminId: admin.id, adminName: admin.name
+      });
+      if (result.reply.trim()) {
+        void enqueueGroupSend(chatId,
+          `${formatAgentLabel(session, lead?.name)} — ${result.reply}`,
+          { threadId, kind: 'critical' });
+      }
+      return;
+    }
+
+    // main_assistant
+    const conv = await getOrCreateMainAssistant(admin.id, agency.id);
+    const result = await runAgentTurn(conv.id, text, {
+      type: 'main_assistant', adminId: admin.id, adminName: admin.name
+    });
     if (result.reply.trim()) {
-      void enqueueGroupSend(chatId, result.reply, { threadId, kind: 'critical' });
+      void enqueueGroupSend(chatId, `🤖 Main — ${result.reply}`, { threadId, kind: 'critical' });
     }
   } catch (err) {
     console.error('[master-topic] handleMasterTopicMessage error:', err);
-    void enqueueGroupSend(
-      chatId,
-      '❌ Erreur interne. Veuillez réessayer.\n❌ Internal error. Please try again.',
-      { threadId, kind: 'critical' }
-    );
+    void enqueueGroupSend(chatId, '❌ Erreur interne. / Internal error.', { threadId, kind: 'critical' });
   }
 }
+
+// handleAgentCallback is now in lib/telegram/handle-agent-callback.ts
+export { handleAgentCallback } from '@/lib/telegram/handle-agent-callback';

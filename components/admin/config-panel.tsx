@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { useLang } from '@/components/lang-provider';
 import { Button } from '@/components/ui/button';
@@ -24,11 +24,31 @@ export function ConfigPanel({
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [ruleDesc, setRuleDesc] = useState('');
   const [ruleKw, setRuleKw] = useState('');
+  const [persona, setPersona] = useState(data?.adminPersona ?? '');
+  const [personaSaving, setPersonaSaving] = useState(false);
+  const personaRef = useRef(data?.adminPersona ?? '');
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (data) setCriteria(data.criteria);
+    if (data) {
+      setCriteria(data.criteria);
+      setPersona(data.adminPersona ?? '');
+      personaRef.current = data.adminPersona ?? '';
+    }
   }, [data]);
+
+  async function savePersona() {
+    const value = persona.trim() || null;
+    if (value === (personaRef.current.trim() || null)) return; // no change
+    setPersonaSaving(true);
+    await fetch('/api/admin/persona', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ persona: value }),
+    }).catch(() => null);
+    personaRef.current = persona;
+    setPersonaSaving(false);
+  }
 
   if (!data) return null;
 
@@ -171,6 +191,23 @@ export function ConfigPanel({
             {t.cfg_add}
           </Button>
         </div>
+      </AdminSection>
+
+      <AdminSection title="Mon profil assistant / My assistant profile">
+        <p className="mb-2 text-sm text-muted-foreground">
+          Décrivez votre rôle, style de communication et préférences. Le bot utilisera ce contexte pour adapter ses réponses.
+        </p>
+        <textarea
+          value={persona}
+          onChange={(e) => setPersona(e.target.value)}
+          onBlur={savePersona}
+          rows={5}
+          placeholder={`Ex: Directeur commercial senior, préfère des résumés en bullet points, répond le soir. Tutoiement bienvenu.\nEx: Senior sales director, prefers concise bullet summaries, no small talk.`}
+          className={cn(inputClass, 'min-h-[120px] w-full resize-y text-sm')}
+        />
+        {personaSaving && (
+          <p className="mt-1 text-xs text-muted-foreground">Enregistrement…</p>
+        )}
       </AdminSection>
 
     </div>

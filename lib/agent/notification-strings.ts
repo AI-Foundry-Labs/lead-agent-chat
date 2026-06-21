@@ -1,18 +1,40 @@
-// FR-only version — all notifications in French regardless of lead language
-const strings = {
-  manual: (msg: string) =>
-    `📩 Nouveau message client — mode conseiller\n\n« ${msg} »\n\nRépondez depuis l'interface web ou Topic 1.`,
-  handoff: (rule: string, msg: string) =>
-    `🚨 Transfert automatique\n\nRègle déclenchée : « ${rule} »\n\nMessage : « ${msg} »\n\nLe prospect attend une réponse humaine.`,
-  viewing_booked_label: (title: string, slot: string, contact: string) =>
-    `[Visite confirmée] ${title} — ${slot} — ${contact}`,
-  viewing_booked_chat: (title: string, slot: string, contact: string) =>
-    `📅 Nouvelle visite confirmée\n\n**Bien :** ${title}\n**Quand :** ${slot}\n**Contact :** ${contact}`,
-  handoff_requested: (reason: string) =>
-    `[Transfert demandé] ${reason}`,
-};
+import type { Language } from '@/lib/types';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function notif(_lang?: unknown) {
-  return strings;
+const strings = {
+  fr: {
+    manual: (msg: string) =>
+      `📩 Nouveau message client — mode conseiller\n\n« ${msg} »\n\nRépondez depuis l'interface web ou Topic 1.`,
+    handoff: (rule: string, msg: string) =>
+      `🚨 Transfert automatique\n\nRègle déclenchée : « ${rule} »\n\nMessage : « ${msg} »\n\nLe prospect attend une réponse humaine.`,
+    viewing_booked_label: (title: string, slot: string, contact: string) =>
+      `[Visite confirmée] ${title} — ${slot} — ${contact}`,
+    viewing_booked_chat: (title: string, slot: string, contact: string) =>
+      `📅 Nouvelle visite confirmée\n\n**Bien :** ${title}\n**Quand :** ${slot}\n**Contact :** ${contact}`,
+    viewing_rescheduled_chat: (title: string, oldSlot: string, newSlot: string, contact: string) =>
+      `🔄 Visite reprogrammée\n\n**Bien :** ${title}\n**Avant :** ${oldSlot}\n**Maintenant :** ${newSlot}\n**Contact :** ${contact}`,
+    viewing_cancelled_chat: (title: string, slot: string, contact: string) =>
+      `❌ Visite annulée\n\n**Bien :** ${title}\n**Quand :** ${slot}\n**Contact :** ${contact}`,
+    handoff_requested: (reason: string) =>
+      `[Transfert demandé] ${reason}`,
+  },
+  en: {
+    manual: (msg: string) =>
+      `📩 New lead message — advisor mode\n\n« ${msg} »\n\nReply from the web UI or Topic 1.`,
+    handoff: (rule: string, msg: string) =>
+      `🚨 Automatic handoff\n\nRule triggered: « ${rule} »\n\nMessage: « ${msg} »\n\nThe lead is waiting for a human reply.`,
+    viewing_booked_label: (title: string, slot: string, contact: string) =>
+      `[Viewing booked] ${title} — ${slot} — ${contact}`,
+    viewing_booked_chat: (title: string, slot: string, contact: string) =>
+      `📅 New viewing confirmed\n\n**Property:** ${title}\n**When:** ${slot}\n**Contact:** ${contact}`,
+    viewing_rescheduled_chat: (title: string, oldSlot: string, newSlot: string, contact: string) =>
+      `🔄 Viewing rescheduled\n\n**Property:** ${title}\n**Before:** ${oldSlot}\n**Now:** ${newSlot}\n**Contact:** ${contact}`,
+    viewing_cancelled_chat: (title: string, slot: string, contact: string) =>
+      `❌ Viewing cancelled\n\n**Property:** ${title}\n**When:** ${slot}\n**Contact:** ${contact}`,
+    handoff_requested: (reason: string) =>
+      `[Handoff requested] ${reason}`,
+  },
+} as const;
+
+export function notif(lang: Language) {
+  return strings[lang] ?? strings.fr;
 }

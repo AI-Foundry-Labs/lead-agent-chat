@@ -6,6 +6,9 @@ import { cn } from '@/lib/utils';
 export function LangToggle() {
   const { lang, setLang, t } = useLang();
 
+  // Hidden when NEXT_PUBLIC_FORCE_LANG is set (single-language instance).
+  if (process.env.NEXT_PUBLIC_FORCE_LANG) return null;
+
   return (
     <div
       className="inline-flex overflow-hidden rounded-lg border border-border/80 bg-surface/60 p-0.5 text-xs"

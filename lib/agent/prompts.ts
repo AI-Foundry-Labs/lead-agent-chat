@@ -33,13 +33,6 @@ Still needed: ${missing.length ? missing.join(', ') : 'nothing — all criteria 
 Current potential: ${lead?.potential_status ?? 'unscored'}`;
 }
 
-function personaBlock(lead: Lead | null): string {
-  const persona = lead?.persona?.trim();
-  if (!persona) return '';
-  return `[LEAD PERSONA — admin/agent-curated profile]
-${persona}`;
-}
-
 function longTermMemoryBlock(lead: Lead | null): string {
   const memory = lead?.long_term_memory?.trim();
   if (!memory) return '';
@@ -135,8 +128,6 @@ ${listingBlock(listing, lang)}
 ${channelBlock(channel, lead)}
 
 ${visitorIdentityBlock(lead)}
-
-${personaBlock(lead)}
 
 ${longTermMemoryBlock(lead)}
 

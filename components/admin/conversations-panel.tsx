@@ -22,7 +22,6 @@ type ThreadDetail = {
     potential: string | null;
     qual_values: Record<string, string>;
     long_term_memory: string | null;
-    persona: string | null;
   } | null;
   messages: { id: string; role: string; content: string }[];
 };
@@ -188,8 +187,6 @@ export function ConversationsPanel({
           <LeadMemoryPanel
             qualValues={detail.lead?.qual_values}
             longTermMemory={detail.lead?.long_term_memory}
-            persona={detail.lead?.persona}
-            leadId={detail.lead?.id}
           />
           <ChatMessageList className="max-h-[420px]">
             {detail.messages.map((m) => (

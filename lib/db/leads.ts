@@ -23,7 +23,6 @@ function rowToLead(r: typeof leads.$inferSelect): Lead {
     potential_status: (r.potential_status as PotentialStatus | null) ?? null,
     score_reason: r.score_reason,
     long_term_memory: r.long_term_memory,
-    persona: r.persona ?? null,
     telegram_user_id: r.telegram_user_id,
     anon_seq: r.anon_seq ?? null,
     created_at: r.created_at,
@@ -116,7 +115,6 @@ export async function updateLead(
     potential_status: PotentialStatus | null;
     score_reason: string | null;
     long_term_memory: string | null;
-    persona: string | null;
     telegram_user_id: string | null;
   }>
 ): Promise<Lead> {

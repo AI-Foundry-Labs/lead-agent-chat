@@ -2,6 +2,79 @@
 
 All notable changes to lead-agent-chat are documented here.
 
+## [2026-06-20] Main Assistant Capability Groups (F1, F4a–d)
+
+### Features
+
+Five new capability groups for the `main_assistant` agent, assembled in `lib/agent/tools/main-assistant/index.ts`:
+
+1. **Message Template Library (F4b)** — CRUD tools for reusable message templates. Placeholders: `{{name}}`, `{{email}}`, `{{listing_title}}`, `{{agency_name}}`. Unresolved placeholders left literal + warned (non-blocking send).
+2. **Telegram Message-History Search (F4c)** — Extended `search_messages` with channel filter ('web'|'email'|'telegram'|'all'). Results tagged with `surface: 'dm'` or `'group'`. Fixed cross-agency leak in prior implementation.
+3. **Anonymous Visitor Pool (F1)** — Tools for listing, reading, and identifying anonymous visitors. Identification requires name OR email; ephemeral if neither. No merge. Reuses `promoteAnonymousVisitor` logic.
+4. **GDPR Consent + Audit Log (F4d)** — Consent table (`lead_consents`, append-only, cascade on lead delete) + audit log (`audit_log`, `target_lead_id` has no FK for erasure record survival). Tools: set/view consent, view audit history, export lead data (Art. 15). Audit recording wired into sensitive tools (lead_viewed, lead_updated, lead_qualified, message_sent, lead_identified, lead_erasure_executed, etc.) via `recordAudit` helper. Erasure = hard-delete, no PII trace.
+5. **Scheduled Messages with Background Delivery (F4a)** — Schedule tools + delivery loop. Stores in `scheduled_messages` table; delivery via polled background loop in `lib/scheduling/deliver-due-scheduled-messages.ts` (at-least-once, retry cap 3, `FOR UPDATE SKIP LOCKED` for multi-instance safety). Times in Europe/Paris timezone. Loop hosted in `lib/instrumentation.ts` `register()` hook, gated by `RUN_SCHEDULER` env (default off, enable on one app instance only). **GDPR Limitation:** Telegram group messages cannot be remotely deleted on erasure (documented limitation); legal-basis/privacy-policy wording and retention auto-purge out of scope.
+
+### Scheduler Infrastructure
+
+- **Host:** Instrumentation loop (`lib/instrumentation.ts` `register()`).
+- **Safety:** `FOR UPDATE SKIP LOCKED` for multi-instance-safe claiming.
+- **Deployment:** Prod uses single app server (no separate worker); scheduler runs inside app process.
+- **Environment:** `RUN_SCHEDULER=true` enables polling; set on exactly one app instance.
+
+### Database Schema
+
+New tables added via idempotent migration `0002_sweet_cannonball.sql`:
+- `message_templates` — Library of reusable messages per agency.
+- `lead_consents` — Append-only consent log; cascades on lead delete.
+- `audit_log` — Append-only audit log; `target_lead_id` has no FK (survives lead erasure).
+- `scheduled_messages` — Pending/sent/failed messages with retry state + send_at timestamp.
+
+### New Files
+
+- `lib/db/message-templates.ts` — `createTemplate`, `updateTemplate`, etc.
+- `lib/db/consents.ts` — `recordConsent`, `getConsent`.
+- `lib/db/audit-helpers.ts` — `recordAudit` (call-site: best-effort, non-blocking).
+- `lib/db/audit-log.ts` — `getAuditHistoryForLead`.
+- `lib/db/scheduled-messages.ts` — `scheduleMessage`, `listScheduled`, `cancelScheduled`.
+- `lib/agent/tools/main-assistant/templates.ts` — Zod-validated CRUD + render.
+- `lib/agent/tools/main-assistant/visitor-pool.ts` — Anonymous visitor tools.
+- `lib/agent/tools/main-assistant/gdpr.ts` — Consent + audit + erasure tools.
+- `lib/agent/tools/main-assistant/scheduled-messages.ts` — Schedule/list/cancel with Paris timezone.
+- `lib/scheduling/deliver-due-scheduled-messages.ts` — Claim-and-deliver loop.
+- `lib/scheduling/scheduled-message-loop.ts` — Polling interval driver.
+- `lib/scheduling/paris-time.ts` — Europe/Paris ↔ UTC conversion (Intl-based, no new dependency).
+
+### Modified Files
+
+- `lib/agent/tools/main-assistant/index.ts` — Register 5 new tool builders (barrel).
+- `lib/agent/tools/main-assistant/messaging.ts` — Extended `search_messages` with channel filter + agency scope fix.
+- `lib/agent/tools/main-assistant/visitor-pool.ts` — Identification reuses `promoteAnonymousVisitor` + `is-identified-lead` gate.
+- `lib/db/schema.ts` — Four new tables: `message_templates`, `lead_consents`, `audit_log`, `scheduled_messages`.
+- `lib/db/leads.ts` — `deleteLead` extended for cascade + audit recording.
+- `lib/dispatch.ts` — Audit recording wired into `dispatchReply`.
+- `lib/instrumentation.ts` — Register scheduler loop (gated by `RUN_SCHEDULER`).
+- `lib/agent/prompts/main-assistant-prompt.ts` — Capability notes appended per phase.
+
+### Migration & Deployment
+
+- Migrations are now **idempotent:** `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, guarded constraints.
+- Docker entrypoint runs migrate from BAKED `/migrate` copy (not bind mount), so schema changes require `docker compose build app telegram` to ship migration into image.
+- Prod path uses `RUN_DB_PUSH=true` (also picks up rebuilt schema).
+
+### Test Coverage
+
+- `npm run typecheck` — PASS (clean).
+- `npm run test` — All tests passing.
+- `npm run test:agent` — All tests passing.
+
+### Backward Compatibility
+
+- All new tools scoped by `agency_id`; existing tools unchanged.
+- Scheduler opt-in via `RUN_SCHEDULER` env (default off).
+- Message templates optional; search/GDPR/visitor tools do not break existing flows.
+
+---
+
 ## [2026-06-14] Anonymous Visitor Promotion to Leads
 
 ### Features

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLang } from '@/components/lang-provider';
+import { LangToggle } from '@/components/lang-toggle';
 import { Button } from '@/components/ui/button';
 import { AdminTabNav } from '@/components/admin/admin-tab-nav';
 import { AgentsPanel } from '@/components/admin/agents-panel';
@@ -79,10 +80,10 @@ export function AdminShell() {
     router.refresh();
   }
 
-  // Telegram group linking — lives in the header so it's reachable from any tab.
+  // DM linking — admin sends /start <token> directly to the bot (no supergroup needed).
   async function linkTelegram() {
     if (linkInfo) { setLinkInfo(null); return; }
-    const res = await fetch('/api/admin/link-telegram', { method: 'POST' });
+    const res = await fetch('/api/admin/link-telegram-dm', { method: 'POST' });
     const d = await res.json();
     setLinkInfo({ deepLink: d.deep_link ?? null, command: d.command ?? '' });
   }
@@ -101,6 +102,7 @@ export function AdminShell() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <AdminTabNav tabs={tabs} active={tab} onChange={setTab} />
         <div className="flex items-center gap-2">
+          <LangToggle />
           <Button variant="outline" size="sm" onClick={() => void linkTelegram()}>
             {t.link_telegram}
           </Button>

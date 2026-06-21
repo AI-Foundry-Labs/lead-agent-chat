@@ -8,10 +8,11 @@ import {
   findBookedSlot,
   createBookedViewing,
   listViewingsByConversation,
-  getViewingById
+  getViewingById,
+  getLeadById
 } from '@/lib/db';
 import { getAvailableSlots, createCalendarEvent, resolveSlotIso } from '@/lib/calendar';
-import { notifyAdmins, notifyAdminsInChat } from '@/lib/notify';
+import { notifyAdmins } from '@/lib/notify';
 import { formatPrice, formatSlot } from '@/lib/format';
 import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
 import { formatConversationForMemory } from '@/lib/agent/cross-thread-context';
@@ -21,7 +22,7 @@ import { telegramConfigured } from '@/lib/telegram';
 import { cancelViewingWithMemory, rescheduleViewingWithMemory } from '@/lib/agent/viewing-actions';
 import { syncLeadStatusToTelegram } from '@/lib/telegram/lead-status-marker';
 import { syncLeadTopicTitles } from '@/lib/telegram/sync-lead-topic-titles';
-import { notif } from '@/lib/agent/notification-strings';
+import { pushAgentNotification } from '@/lib/agent/push-agent-notification';
 import type { AgentContext } from './context';
 import { ensureLead } from './context';
 
@@ -209,10 +210,13 @@ export function buildLeadTools(ctx: AgentContext) {
             console.error('[lead-tools] syncLeadTopicTitles failed:', e)
           );
         }
-        const n = notif(ctx.lang);
         const contact = contact_name ?? lead.name ?? email;
-        await notifyAdmins(n.viewing_booked_label(listing.title, formatSlot(slot_iso), contact));
-        await notifyAdminsInChat(n.viewing_booked_chat(listing.title, formatSlot(slot_iso), contact));
+        void pushAgentNotification({
+          agencyId: ctx.config.agency_id,
+          leadId: lead.id,
+          event: { kind: 'viewing_booked', title: listing.title, slot: formatSlot(slot_iso), contact },
+          lang: ctx.lang
+        });
         scheduleAppendLeadLongTermFacts(lead.id, [
           `viewing booked: ${listing.title} (${listing.address}) on ${formatSlot(slot_iso)}`,
           `contact: ${contact_name ?? lead.name ?? '—'} <${email}>`,
@@ -237,8 +241,13 @@ export function buildLeadTools(ctx: AgentContext) {
         });
         if (ctx.conversation.lead_id) {
           await updateLead(ctx.conversation.lead_id, { status: 'handoff' });
+          void pushAgentNotification({
+            agencyId: ctx.config.agency_id,
+            leadId: ctx.conversation.lead_id,
+            event: { kind: 'handoff_requested', reason },
+            lang: ctx.lang
+          });
         }
-        await notifyAdmins(notif(ctx.lang).handoff_requested(reason));
         return { ok: true, handed_off: true };
       }
     }),
@@ -365,7 +374,25 @@ export function buildLeadTools(ctx: AgentContext) {
         if (!viewing || viewing.conversation_id !== ctx.conversation.id) {
           return { error: 'viewing_not_found' };
         }
-        return cancelViewingWithMemory(viewing_id, ctx.config.calendar_id, reason);
+        const result = await cancelViewingWithMemory(viewing_id, ctx.config.calendar_id, reason);
+        // Notify the agency (web agent tab + Telegram) that the lead cancelled.
+        if (!('error' in result) && viewing.lead_id) {
+          const listing = viewing.listing_id ? await getListing(viewing.listing_id) : null;
+          const lead = await getLeadById(viewing.lead_id);
+          void pushAgentNotification({
+            agencyId: ctx.config.agency_id,
+            leadId: viewing.lead_id,
+            event: {
+              kind: 'viewing_cancelled',
+              title: listing?.title ?? viewing.listing_id ?? '—',
+              slot: viewing.confirmed_slot ? formatSlot(viewing.confirmed_slot.toString()) : '—',
+              contact: lead?.name ?? viewing.contact_email ?? '—',
+              reason
+            },
+            lang: ctx.lang
+          });
+        }
+        return result;
       }
     }),
 
@@ -383,21 +410,27 @@ export function buildLeadTools(ctx: AgentContext) {
         if (!viewing || viewing.conversation_id !== ctx.conversation.id) {
           return { error: 'viewing_not_found' };
         }
-        return rescheduleViewingWithMemory(viewing_id, new_slot_iso, ctx.config.calendar_id);
+        const oldSlot = viewing.confirmed_slot ? formatSlot(viewing.confirmed_slot.toString()) : '—';
+        const result = await rescheduleViewingWithMemory(viewing_id, new_slot_iso, ctx.config.calendar_id);
+        // Notify the agency (web agent tab + Telegram) that the lead rescheduled.
+        if (!('error' in result) && viewing.lead_id) {
+          const listing = viewing.listing_id ? await getListing(viewing.listing_id) : null;
+          const lead = await getLeadById(viewing.lead_id);
+          void pushAgentNotification({
+            agencyId: ctx.config.agency_id,
+            leadId: viewing.lead_id,
+            event: {
+              kind: 'viewing_rescheduled',
+              title: listing?.title ?? viewing.listing_id ?? '—',
+              oldSlot,
+              newSlot: result.new_slot,
+              contact: lead?.name ?? viewing.contact_email ?? '—'
+            },
+            lang: ctx.lang
+          });
+        }
+        return result;
       }
     }),
-
-    update_lead_persona: tool({
-      description:
-        'Update or replace the lead\'s freeform persona text. Call after gathering enough context to write a concise profile summary (1–5 sentences). Captures identity, stated intent, preferences, key objections, and behavioral notes. This is the curated admin view of the lead — write it as a professional agent briefing note.',
-      inputSchema: z.object({
-        persona: z.string().max(2000).describe('Freeform profile summary, 1–5 sentences')
-      }),
-      execute: async ({ persona }) => {
-        const lead = await ensureLead(ctx);
-        await updateLead(lead.id, { persona });
-        return { ok: true };
-      }
-    })
   };
 }

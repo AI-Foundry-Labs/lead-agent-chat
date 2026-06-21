@@ -14,7 +14,8 @@
  */
 
 import { consumeAgencyTelegramLink } from '@/lib/auth';
-import { getAgencyByTelegramGroup, bindTelegramGroupToAgency, setAgencyMasterTopic } from '@/lib/db';
+import { getAgencyByTelegramGroup, bindTelegramGroupToAgency, setAgencyMasterTopic, getAgencyById } from '@/lib/db';
+import { getAdminByTelegramUserId } from '@/lib/db/telegram-links';
 import { sendTelegramMessage, getBot, createForumTopic } from '@/lib/telegram';
 import { enqueueGroupSend } from '@/lib/telegram/group-send-queue';
 import { verifyAgencyGroup } from '@/lib/telegram/verify-agency-group';
@@ -22,7 +23,8 @@ import { routeGroupMessage } from '@/lib/telegram/route-group-message';
 import {
   handleOperatorTopicMessage,
   handleConversationTopicMessage,
-  handleMasterTopicMessage
+  handleMasterTopicMessage,
+  handleAgentCallback
 } from '@/lib/telegram/handle-group-telegram-message';
 import {
   handleAdminStart,
@@ -78,7 +80,8 @@ async function handleAgencyGroupLink(
   if (!agencyId) {
     await sendTelegramMessage(
       chatId,
-      "❌ Token invalide ou expiré. Demandez un nouveau code depuis l'interface web."
+      "❌ Token invalide ou expiré. Demandez un nouveau code depuis l'interface web.\n" +
+      '❌ Invalid or expired token. Request a new code from the web interface.'
     );
     return;
   }
@@ -101,7 +104,10 @@ async function handleAgencyGroupLink(
       await setAgencyMasterTopic(agencyId, threadId);
       void enqueueGroupSend(
         chatId,
-        "🛠 Topic Master prêt — envoyez un message ici pour configurer l'agence (critères, annonces, règles).",
+        "🛠 Topic Master prêt — envoyez un message ici pour configurer l'agence " +
+        '(critères, annonces, règles).\n' +
+        '🛠 Master topic ready — message here to configure the agency ' +
+        '(criteria, listings, rules).',
         { threadId, kind: 'critical' }
       );
     } else {
@@ -111,9 +117,12 @@ async function handleAgencyGroupLink(
 
   await sendTelegramMessage(
     chatId,
-    "✅ Groupe lié à l'agence. Le bot est prêt à créer des fils par lead.\n\n" +
-    'Prochaines étapes :\n' +
-    '• Les nouveaux leads déclencheront automatiquement la création de sujets.'
+    "✅ Groupe lié à l'agence.\n" +
+    '✅ Group linked to the agency.\n\n' +
+    'Tout se passe dans le sujet 🛠 Master / Everything happens in the 🛠 Master topic:\n' +
+    '• Écrivez du texte pour discuter avec l’assistant. / Type to chat with the assistant.\n' +
+    '• /help pour voir les commandes (/agent, /leads, /lead_history, /pool…).\n' +
+    '• /help to list commands (/agent, /leads, /lead_history, /pool…).'
   );
 }
 
@@ -122,6 +131,36 @@ async function handleAgencyGroupLink(
 export async function handleTelegramUpdate(
   update: TelegramUpdate
 ): Promise<'admin' | 'lead' | 'group' | 'unlinked' | 'ignored'> {
+  // ── CALLBACK_QUERY branch (inline-keyboard taps) ──────────────────────────
+  // Inline-keyboard taps arrive as callback_query, not message.
+  if (update.callback_query) {
+    const cq = update.callback_query;
+    const chatId = String(cq.message?.chat?.id ?? '');
+    const threadId = cq.message?.message_thread_id;
+    const data = cq.data ?? '';
+    const fromId = cq.from?.id != null ? String(cq.from.id) : '';
+    const agency = chatId ? await getAgencyByTelegramGroup(chatId) : null;
+    // Single-topic UX: handle the /agent inline-keyboard tap wherever it was
+    // posted (General or any thread) — reply goes back to that same thread.
+    if (agency) {
+      await handleAgentCallback(chatId, agency, fromId, data, threadId, cq.id);
+      return 'group';
+    }
+    // DM mode: callback from a linked admin's private chat.
+    if (fromId) {
+      const adminRow = await getAdminByTelegramUserId(fromId);
+      if (adminRow) {
+        const dmAgency = await getAgencyById(adminRow.agency_id);
+        if (dmAgency) {
+          const dmSend = (msg: string) => void sendTelegramMessage(chatId, msg);
+          await handleAgentCallback(chatId, dmAgency, fromId, data, undefined, cq.id, dmSend);
+          return 'admin';
+        }
+      }
+    }
+    return 'ignored';
+  }
+
   const msg = update?.message;
   const text = msg?.text;
   const fromId = msg?.from?.id != null ? String(msg.from.id) : null;
@@ -170,7 +209,11 @@ export async function handleTelegramUpdate(
       await handleConversationTopicMessage(chatId, route.mapping);
       return 'group';
     }
-    return 'ignored'; // general / unknown thread
+    // Single-topic UX: any other thread (General, Master, or unknown) is the one
+    // admin↔assistant surface — handle it there so the bot is never silent on a
+    // command/chat just because the admin used General instead of 🛠 Master.
+    await handleMasterTopicMessage(chatId, agency, fromId, text, msg.message_thread_id);
+    return 'group';
   }
 
   // ── PRIVATE branch ────────────────────────────────────────────────────────
