@@ -41,31 +41,35 @@ async function answerCq(callbackQueryId: string) {
   try { await b.api.answerCallbackQuery(callbackQueryId); } catch { /* non-fatal */ }
 }
 
-// ─── Individual callback handlers ────────────────────────────────────────────
+type SendFn = (msg: string) => void;
 
-async function handleMain(chatId: string, agencyId: string, threadId: number | undefined) {
-  await setAgentSession(agencyId, { agent_kind: 'main', lead_id: null });
-  void enqueueGroupSend(chatId, '✅ Agent : 🤖 Main', { threadId, kind: 'critical' });
+function makeGroupSend(chatId: string, threadId: number | undefined): SendFn {
+  return (msg: string) => void enqueueGroupSend(chatId, msg, { threadId, kind: 'critical' });
 }
 
-async function handleLead(chatId: string, agency: Agency, leadId: string, threadId: number | undefined) {
+// ─── Individual callback handlers ────────────────────────────────────────────
+
+async function handleMain(chatId: string, agencyId: string, threadId: number | undefined, send?: SendFn) {
+  await setAgentSession(agencyId, { agent_kind: 'main', lead_id: null });
+  (send ?? makeGroupSend(chatId, threadId))('✅ Agent : 🤖 Main');
+}
+
+async function handleLead(chatId: string, agency: Agency, leadId: string, threadId: number | undefined, send?: SendFn) {
+  const send_ = send ?? makeGroupSend(chatId, threadId);
   const lead = await getLeadById(leadId);
   if (!lead || lead.agency_id !== agency.id) {
-    void enqueueGroupSend(chatId, '❌ Lead invalide.', { threadId, kind: 'critical' });
+    send_('❌ Lead invalide.');
     return;
   }
   await setAgentSession(agency.id, { agent_kind: 'operator', lead_id: leadId });
-  void enqueueGroupSend(
-    chatId,
-    `✅ Agent : ${formatAgentLabel({ agent_kind: 'operator', lead_id: leadId }, lead.name)}`,
-    { threadId, kind: 'critical' }
-  );
+  send_(`✅ Agent : ${formatAgentLabel({ agent_kind: 'operator', lead_id: leadId }, lead.name)}`);
 }
 
-async function handleDetail(chatId: string, agency: Agency, leadId: string, threadId: number | undefined) {
+async function handleDetail(chatId: string, agency: Agency, leadId: string, threadId: number | undefined, send?: SendFn) {
+  const send_ = send ?? makeGroupSend(chatId, threadId);
   const lead = await getLeadById(leadId);
   if (!lead || lead.agency_id !== agency.id) {
-    void enqueueGroupSend(chatId, '❌ Lead invalide.', { threadId, kind: 'critical' });
+    send_('❌ Lead invalide.');
     return;
   }
   const lines = [
@@ -75,18 +79,19 @@ async function handleDetail(chatId: string, agency: Agency, leadId: string, thre
     Object.keys(lead.qual_values ?? {}).length ? `Qualif: ${JSON.stringify(lead.qual_values)}` : null,
     lead.long_term_memory ? `Mémoire: ${lead.long_term_memory.slice(0, 400)}` : null,
   ].filter(Boolean);
-  void enqueueGroupSend(chatId, clip(lines.join('\n')), { threadId, kind: 'critical' });
+  send_(clip(lines.join('\n')));
 }
 
-async function handleHistory(chatId: string, agency: Agency, leadId: string, threadId: number | undefined) {
+async function handleHistory(chatId: string, agency: Agency, leadId: string, threadId: number | undefined, send?: SendFn) {
+  const send_ = send ?? makeGroupSend(chatId, threadId);
   const lead = await getLeadById(leadId);
   if (!lead || lead.agency_id !== agency.id) {
-    void enqueueGroupSend(chatId, '❌ Lead invalide.', { threadId, kind: 'critical' });
+    send_('❌ Lead invalide.');
     return;
   }
   const conv = await getConversationByLeadId(lead.id);
   if (!conv) {
-    void enqueueGroupSend(chatId, '(aucune conversation pour ce lead)', { threadId, kind: 'critical' });
+    send_('(aucune conversation pour ce lead)');
     return;
   }
   const msgs = (await getVisibleMessages(conv.id)).slice(-30);
@@ -94,14 +99,10 @@ async function handleHistory(chatId: string, agency: Agency, leadId: string, thr
   const body = msgs.length
     ? msgs.map((m) => `${icon[m.role] ?? m.role}: ${m.content}`).join('\n')
     : '(aucun message)';
-  void enqueueGroupSend(
-    chatId,
-    clip(`💬 ${lead.name ?? lead.email ?? 'Lead'} — ${msgs.length} dernier(s) message(s):\n${body}`),
-    { threadId, kind: 'critical' }
-  );
+  send_(clip(`💬 ${lead.name ?? lead.email ?? 'Lead'} — ${msgs.length} dernier(s) message(s):\n${body}`));
 }
 
-async function handleAgentPage(chatId: string, agency: Agency, page: number, threadId: number | undefined) {
+async function handleAgentPage(chatId: string, agency: Agency, page: number, threadId: number | undefined, _send?: SendFn) {
   const leads = await listLeads(agency.id);
   const session = await getAgentSession(agency.id);
   const activeLeadId = session?.agent_kind === 'operator' ? session.lead_id : null;
@@ -114,7 +115,7 @@ async function handleAgentPage(chatId: string, agency: Agency, page: number, thr
 }
 
 async function handleLeadsPage(
-  chatId: string, agency: Agency, status: string, page: number, threadId: number | undefined
+  chatId: string, agency: Agency, status: string, page: number, threadId: number | undefined, _send?: SendFn
 ) {
   let leads = await listLeads(agency.id);
   if (status) leads = leads.filter((l) => l.status === status || l.potential_status === status);
@@ -126,7 +127,7 @@ async function handleLeadsPage(
   );
 }
 
-async function handleHistPage(chatId: string, agency: Agency, page: number, threadId: number | undefined) {
+async function handleHistPage(chatId: string, agency: Agency, page: number, threadId: number | undefined, _send?: SendFn) {
   const leads = await listLeads(agency.id);
   await sendTelegramKeyboard(
     chatId,
@@ -144,15 +145,14 @@ export async function handleAgentCallback(
   fromId: string,
   data: string,
   threadId: number | undefined,
-  callbackQueryId?: string
+  callbackQueryId?: string,
+  sendFn?: SendFn
 ): Promise<void> {
   if (callbackQueryId) await answerCq(callbackQueryId);
 
   const admin = await resolveActingAdmin(fromId, agency.id);
   if (!admin) {
-    void enqueueGroupSend(chatId, '❌ Aucun administrateur trouvé. / No admin found.', {
-      threadId, kind: 'critical',
-    });
+    (sendFn ?? makeGroupSend(chatId, threadId))('❌ Aucun administrateur trouvé. / No admin found.');
     return;
   }
 
@@ -160,12 +160,12 @@ export async function handleAgentCallback(
   if (!cb) return;
 
   switch (cb.kind) {
-    case 'main':      return handleMain(chatId, agency.id, threadId);
-    case 'lead':      return handleLead(chatId, agency, cb.leadId, threadId);
-    case 'detail':    return handleDetail(chatId, agency, cb.leadId, threadId);
-    case 'history':   return handleHistory(chatId, agency, cb.leadId, threadId);
-    case 'agent_pg':  return handleAgentPage(chatId, agency, cb.page, threadId);
-    case 'leads_pg':  return handleLeadsPage(chatId, agency, cb.status, cb.page, threadId);
-    case 'hist_pg':   return handleHistPage(chatId, agency, cb.page, threadId);
+    case 'main':      return handleMain(chatId, agency.id, threadId, sendFn);
+    case 'lead':      return handleLead(chatId, agency, cb.leadId, threadId, sendFn);
+    case 'detail':    return handleDetail(chatId, agency, cb.leadId, threadId, sendFn);
+    case 'history':   return handleHistory(chatId, agency, cb.leadId, threadId, sendFn);
+    case 'agent_pg':  return handleAgentPage(chatId, agency, cb.page, threadId, sendFn);
+    case 'leads_pg':  return handleLeadsPage(chatId, agency, cb.status, cb.page, threadId, sendFn);
+    case 'hist_pg':   return handleHistPage(chatId, agency, cb.page, threadId, sendFn);
   }
 }

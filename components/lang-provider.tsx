@@ -24,6 +24,8 @@ export function LangProvider({
   const [lang, setLangState] = useState<Lang>(initialLang);
 
   const setLang = (l: Lang) => {
+    // Ignore lang change when instance is locked to a single language.
+    if (process.env.NEXT_PUBLIC_FORCE_LANG) return;
     setLangState(l);
     // Persist for server components, then refresh so listing content re-renders.
     document.cookie = `${LANG_COOKIE}=${l}; path=/; max-age=${60 * 60 * 24 * 365}`;

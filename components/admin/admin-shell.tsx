@@ -80,10 +80,10 @@ export function AdminShell() {
     router.refresh();
   }
 
-  // Telegram group linking — lives in the header so it's reachable from any tab.
+  // DM linking — admin sends /start <token> directly to the bot (no supergroup needed).
   async function linkTelegram() {
     if (linkInfo) { setLinkInfo(null); return; }
-    const res = await fetch('/api/admin/link-telegram', { method: 'POST' });
+    const res = await fetch('/api/admin/link-telegram-dm', { method: 'POST' });
     const d = await res.json();
     setLinkInfo({ deepLink: d.deep_link ?? null, command: d.command ?? '' });
   }

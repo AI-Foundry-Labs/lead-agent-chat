@@ -56,12 +56,16 @@ function leadButtons(leads: Lead[]) {
 /**
  * Try to handle a Master-topic slash command. Returns true if handled (caller
  * should stop), false if the text is not one of these commands (→ /agent / chat).
+ *
+ * @param sendFn  Optional custom send function (e.g. for DM mode). Defaults to
+ *                enqueueGroupSend for group/topic use.
  */
 export async function tryHandleMasterCommand(
   chatId: string,
   agency: Agency,
   threadId: number | undefined,
-  text: string
+  text: string,
+  sendFn?: (msg: string) => void
 ): Promise<boolean> {
   const trimmed = text.trim();
   if (!trimmed.startsWith('/')) return false;
@@ -71,7 +75,9 @@ export async function tryHandleMasterCommand(
   const arg = sp === -1 ? '' : trimmed.slice(sp + 1).trim();
 
   const reply = (msg: string) =>
-    void enqueueGroupSend(chatId, clip(msg), { threadId, kind: 'critical' });
+    sendFn
+      ? void sendFn(clip(msg))
+      : void enqueueGroupSend(chatId, clip(msg), { threadId, kind: 'critical' });
 
   switch (cmd) {
     case '/help':

@@ -14,7 +14,8 @@
  */
 
 import { consumeAgencyTelegramLink } from '@/lib/auth';
-import { getAgencyByTelegramGroup, bindTelegramGroupToAgency, setAgencyMasterTopic } from '@/lib/db';
+import { getAgencyByTelegramGroup, bindTelegramGroupToAgency, setAgencyMasterTopic, getAgencyById } from '@/lib/db';
+import { getAdminByTelegramUserId } from '@/lib/db/telegram-links';
 import { sendTelegramMessage, getBot, createForumTopic } from '@/lib/telegram';
 import { enqueueGroupSend } from '@/lib/telegram/group-send-queue';
 import { verifyAgencyGroup } from '@/lib/telegram/verify-agency-group';
@@ -144,6 +145,18 @@ export async function handleTelegramUpdate(
     if (agency) {
       await handleAgentCallback(chatId, agency, fromId, data, threadId, cq.id);
       return 'group';
+    }
+    // DM mode: callback from a linked admin's private chat.
+    if (fromId) {
+      const adminRow = await getAdminByTelegramUserId(fromId);
+      if (adminRow) {
+        const dmAgency = await getAgencyById(adminRow.agency_id);
+        if (dmAgency) {
+          const dmSend = (msg: string) => void sendTelegramMessage(chatId, msg);
+          await handleAgentCallback(chatId, dmAgency, fromId, data, undefined, cq.id, dmSend);
+          return 'admin';
+        }
+      }
     }
     return 'ignored';
   }
