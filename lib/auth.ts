@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { cookies } from 'next/headers';
+import { resolveBaseUrl } from '@/lib/resolve-base-url';
 import { and, eq, gt, isNull, lt } from 'drizzle-orm';
 import {
   db,
@@ -204,7 +205,7 @@ export async function createMagicLink(
     email,
     expires_at: new Date(Date.now() + MAGIC_TTL_MS)
   });
-  const base = process.env.APP_BASE_URL ?? 'http://localhost:3000';
+  const base = await resolveBaseUrl();
   return `${base}/api/auth/lead-callback?token=${encodeURIComponent(token)}`;
 }
 

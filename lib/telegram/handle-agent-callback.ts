@@ -32,7 +32,7 @@ function clip(s: string, max = 3800): string {
 }
 
 function leadButtons(leads: Awaited<ReturnType<typeof listLeads>>) {
-  return leads.map((l) => ({ id: l.id, label: l.name ?? l.email ?? l.id.slice(0, 8) }));
+  return leads.map((l) => ({ id: l.id, label: l.name ?? l.email ?? 'Anonymous' }));
 }
 
 async function answerCq(callbackQueryId: string) {
@@ -152,7 +152,7 @@ export async function handleAgentCallback(
 
   const admin = await resolveActingAdmin(fromId, agency.id);
   if (!admin) {
-    (sendFn ?? makeGroupSend(chatId, threadId))('❌ Aucun administrateur trouvé. / No admin found.');
+    (sendFn ?? makeGroupSend(chatId, threadId))('❌ Aucun administrateur trouvé.');
     return;
   }
 

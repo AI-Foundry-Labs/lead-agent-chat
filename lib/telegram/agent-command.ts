@@ -129,6 +129,6 @@ function buildNavRow(total: number, page: number, prefix: string) {
 }
 
 export function formatAgentLabel(session: AgentSession | null, leadName?: string | null): string {
-  if (session?.agent_kind === 'operator') return `👤 Operator · ${leadName ?? 'lead'}`;
+  if (session?.agent_kind === 'operator') return `👤 Operator · ${leadName ?? 'Anonymous'}`;
   return '🤖 Main';
 }

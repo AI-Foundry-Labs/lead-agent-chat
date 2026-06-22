@@ -59,4 +59,4 @@ next-env.d.ts
 # uploaded listing images (local dev)
 /public/uploads/
 
-.claude/
+.claude/.next-root-bak/
