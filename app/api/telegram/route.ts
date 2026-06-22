@@ -25,6 +25,10 @@ export async function POST(req: Request) {
   }
 
   const update = await req.json().catch(() => null);
-  if (update) await handleTelegramUpdate(update);
+  // x-telegram-fanout: extra → this instance is a secondary fan-out target.
+  // It should silently skip updates it cannot handle (unknown tokens) so only
+  // the primary instance sends error replies to Telegram users.
+  const isFanoutExtra = req.headers.get('x-telegram-fanout') === 'extra';
+  if (update) await handleTelegramUpdate(update, { silent: isFanoutExtra });
   return new Response('ok', { status: 200 });
 }

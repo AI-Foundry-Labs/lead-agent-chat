@@ -57,8 +57,11 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://lead_agent:lead_agent_dev@db:5432/lead_agent
-      # Override so the poller forwards updates to the app container (not localhost)
-      APP_BASE_URL: http://app:3000
+      # Use full container name to avoid DNS ambiguity when joined to QC networks
+      APP_BASE_URL: http://lead-agent-chat-app-1:3000
+      # Fan-out to QC instances so their tokens (stored in separate DBs) resolve.
+      # QC apps are reachable via their Docker networks (joined below).
+      EXTRA_APP_URLS: ${EXTRA_APP_URLS:-http://lead-agent-chat-qc1-app-1:3000,http://lead-agent-chat-qc2-app-1:3000}
       # The poller must NOT touch the schema — the app container owns migrations.
       # Without these, the entrypoint defaults to `drizzle-kit push --force`, which
       # hangs on an interactive truncate prompt (no TTY) and the poller never starts.
@@ -68,7 +71,19 @@ services:
     volumes:
       - .:/app
       - app_node_modules:/app/node_modules
+    networks:
+      - default
+      - lead-agent-chat-qc1_default
+      - lead-agent-chat-qc2_default
 
 volumes:
   postgres_data:
   app_node_modules:
+
+networks:
+  default:
+    name: lead-agent-chat_default
+  lead-agent-chat-qc1_default:
+    external: true
+  lead-agent-chat-qc2_default:
+    external: true

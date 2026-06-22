@@ -5,18 +5,39 @@ import { getBot } from '../lib/telegram';
 const APP_URL = process.env.APP_BASE_URL ?? 'http://app:3000';
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET ?? '';
 
-async function forwardUpdate(update: object): Promise<void> {
-  const res = await fetch(`${APP_URL}/api/telegram`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-telegram-bot-api-secret-token': WEBHOOK_SECRET
-    },
-    body: JSON.stringify(update)
-  });
-  if (!res.ok) {
-    console.error('[telegram-dev] forward failed:', res.status, await res.text().catch(() => ''));
+// Additional app URLs to fan-out to (comma-separated), e.g. QC1/QC2 instances.
+// Each URL receives the same update so tokens stored in their respective DBs resolve.
+const EXTRA_URLS = (process.env.EXTRA_APP_URLS ?? '')
+  .split(',')
+  .map((u) => u.trim())
+  .filter(Boolean);
+
+async function forwardToUrl(url: string, update: object, isPrimary: boolean): Promise<void> {
+  try {
+    const res = await fetch(`${url}/api/telegram`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-telegram-bot-api-secret-token': WEBHOOK_SECRET,
+        ...(isPrimary ? {} : { 'x-telegram-fanout': 'extra' })
+      },
+      body: JSON.stringify(update),
+      signal: AbortSignal.timeout(30_000)
+    });
+    console.log(`[telegram-dev] forward to ${url} → ${res.status}`);
+    if (!res.ok) {
+      console.error(`[telegram-dev] forward to ${url} failed:`, res.status, await res.text().catch(() => ''));
+    }
+  } catch (e) {
+    console.error(`[telegram-dev] forward to ${url} threw:`, (e as Error).message);
   }
+}
+
+async function forwardUpdate(update: object): Promise<void> {
+  await Promise.allSettled([
+    forwardToUrl(APP_URL, update, true),
+    ...EXTRA_URLS.map((url) => forwardToUrl(url, update, false))
+  ]);
 }
 
 // Local Telegram runner using long polling — no public URL/webhook needed.
@@ -31,6 +52,9 @@ async function main() {
   // Forward EVERY update (message + callback_query for the /agent inline picker).
   bot.use(async (ctx) => {
     try {
+      const text = ctx.message?.text ?? ctx.callbackQuery?.data ?? '(no text)';
+      const from = ctx.from?.id ?? '?';
+      console.log(`[telegram-dev] update from=${from} text=${text} → forwarding to ${[APP_URL, ...EXTRA_URLS].join(', ')}`);
       await forwardUpdate(ctx.update);
     } catch (e) {
       console.error('[telegram-dev] handler error:', e);

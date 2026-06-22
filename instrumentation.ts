@@ -28,6 +28,17 @@ export async function register(): Promise<void> {
       .catch((e) => console.warn('[instrumentation] setMyCommands (private) failed:', e));
   }
 
+  // Warm up /api/telegram so the first real Telegram update doesn't hit a 14s cold compile.
+  const appUrl = process.env.APP_BASE_URL ?? 'http://localhost:3000';
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET ?? '';
+  if (secret) {
+    fetch(`${appUrl}/api/telegram`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-telegram-bot-api-secret-token': secret },
+      body: JSON.stringify({ update_id: 0 })
+    }).catch(() => {});
+  }
+
   const flag = process.env.RUN_SCHEDULER;
   if (flag !== '1' && flag !== 'true') return;
   const { startScheduledMessageLoop } = await import(

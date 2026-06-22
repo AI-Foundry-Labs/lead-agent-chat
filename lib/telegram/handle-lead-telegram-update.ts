@@ -124,7 +124,8 @@ async function handleAgencyGroupLink(
 // ─── Main dispatcher ───────────────────────────────────────────────────────
 
 export async function handleTelegramUpdate(
-  update: TelegramUpdate
+  update: TelegramUpdate,
+  opts: { silent?: boolean } = {}
 ): Promise<'admin' | 'lead' | 'group' | 'unlinked' | 'ignored'> {
   // ── CALLBACK_QUERY branch (inline-keyboard taps) ──────────────────────────
   // Inline-keyboard taps arrive as callback_query, not message.
@@ -214,9 +215,19 @@ export async function handleTelegramUpdate(
   // ── PRIVATE branch ────────────────────────────────────────────────────────
   if (text.startsWith('/start')) {
     const token = text.split(/\s+/)[1];
-    if (!token) return sendStartNoTokenReply(chatId, fromId);
-    if (await handleAdminStart(chatId, token)) return 'admin';
-    if (await handleLeadStart(chatId, fromId, token)) return 'lead';
+    console.log(`[telegram] /start token=${token ?? '(none)'} silent=${opts.silent ?? false}`);
+    if (!token) {
+      if (opts.silent) return 'ignored';
+      return sendStartNoTokenReply(chatId, fromId);
+    }
+    const adminOk = await handleAdminStart(chatId, token);
+    console.log(`[telegram] handleAdminStart result=${adminOk}`);
+    if (adminOk) return 'admin';
+    const leadOk = await handleLeadStart(chatId, fromId, token);
+    console.log(`[telegram] handleLeadStart result=${leadOk}`);
+    if (leadOk) return 'lead';
+    // silent mode: token not in this instance's DB — let primary handle the error reply
+    if (opts.silent) return 'unlinked';
     await sendTelegramMessage(chatId, '❌ Lien invalide ou expiré.');
     return 'unlinked';
   }
@@ -224,6 +235,7 @@ export async function handleTelegramUpdate(
   if (await handleAdminMessage(chatId, fromId, text)) return 'admin';
   if (await handleLeadMessage(fromId, text)) return 'lead';
 
+  if (opts.silent) return 'unlinked';
   await sendUnlinkedReply(chatId);
   return 'unlinked';
 }
