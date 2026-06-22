@@ -7,9 +7,9 @@ services:
       POSTGRES_PASSWORD: lead_agent_dev
       POSTGRES_DB: lead_agent
     ports:
-      - "5442:5432"
+      - "5443:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_qc1:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lead_agent -d lead_agent"]
       interval: 5s
@@ -36,12 +36,10 @@ services:
       RUN_SCHEDULER: "1"
     volumes:
       - .:/app
-      - app_node_modules:/app/node_modules
+      - app_node_modules_qc1:/app/node_modules
     ports:
-      - "3300:3000"
+      - "3301:3000"
 
-  # Telegram long-polling — receives messages without needing a public webhook URL.
-  # Remove this service in production and register a webhook instead.
   telegram:
     build:
       context: .
@@ -57,7 +55,6 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://lead_agent:lead_agent_dev@db:5432/lead_agent
-      # Override so the poller forwards updates to the app container (not localhost)
       APP_BASE_URL: http://app:3000
       # The poller must NOT touch the schema — the app container owns migrations.
       # Without these, the entrypoint defaults to `drizzle-kit push --force`, which
@@ -67,8 +64,8 @@ services:
       RUN_DB_SEED: "false"
     volumes:
       - .:/app
-      - app_node_modules:/app/node_modules
+      - app_node_modules_qc1:/app/node_modules
 
 volumes:
-  postgres_data:
-  app_node_modules:
+  postgres_data_qc1:
+  app_node_modules_qc1:
