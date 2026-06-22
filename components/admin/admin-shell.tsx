@@ -83,12 +83,14 @@ export function AdminShell() {
     router.refresh();
   }
 
-  // DM linking — admin sends /start <token> directly to the bot (no supergroup needed).
+  // Group linking — admin pastes /link <token> INSIDE the agency supergroup to
+  // bind the group and auto-create the 🛠 Master topic. No deep link (the command
+  // must be sent in the group, not a DM).
   async function linkTelegram() {
     if (linkInfo) { setLinkInfo(null); return; }
-    const res = await fetch('/api/admin/link-telegram-dm', { method: 'POST' });
+    const res = await fetch('/api/admin/link-telegram', { method: 'POST' });
     const d = await res.json();
-    setLinkInfo({ deepLink: d.deep_link ?? null, command: d.command ?? '' });
+    setLinkInfo({ deepLink: null, command: d.command ?? '' });
   }
 
   const tabs: { key: Tab; label: string }[] = [

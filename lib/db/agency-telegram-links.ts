@@ -53,15 +53,21 @@ export async function bindTelegramGroupToAgency(
 }
 
 /**
- * Persist the 🛠 Master topic thread id for an agency.
- * Called once after createForumTopic succeeds during /link.
+ * Atomically claim the 🛠 Master topic slot for an agency.
+ *
+ * Conditional on telegram_master_topic_id IS NULL so two concurrent / retried
+ * bind events can't both register a Master topic. Returns true when THIS call
+ * won the claim (so the caller keeps its just-created topic), false when another
+ * call already set it (caller should clean up its orphan topic).
  */
 export async function setAgencyMasterTopic(
   agencyId: string,
   threadId: number
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const rows = await db
     .update(agencies)
     .set({ telegram_master_topic_id: threadId })
-    .where(eq(agencies.id, agencyId));
+    .where(and(eq(agencies.id, agencyId), isNull(agencies.telegram_master_topic_id)))
+    .returning({ id: agencies.id });
+  return rows.length > 0;
 }

@@ -13,6 +13,7 @@ import {
 } from '@/lib/db';
 import { getAvailableSlots, createCalendarEvent, resolveSlotIso } from '@/lib/calendar';
 import { notifyAdmins } from '@/lib/notify';
+import { notifyAgencyGroup } from '@/lib/telegram/notify-agency';
 import { formatPrice, formatSlot } from '@/lib/format';
 import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
 import { formatConversationForMemory } from '@/lib/agent/cross-thread-context';
@@ -248,8 +249,11 @@ export function buildLeadTools(ctx: AgentContext) {
             lang: ctx.lang
           });
         } else {
-          // Anonymous visitor — fallback to DM all linked admins.
-          void notifyAdmins(`🚨 Handoff demandé — visiteur anonyme\nRaison : ${reason}`);
+          // Anonymous visitor — push to the 🛠 Master topic (proactive) and DM
+          // any linked admins as a secondary channel.
+          const note = `🚨 Handoff demandé — visiteur anonyme\nRaison : ${reason}`;
+          void notifyAgencyGroup(ctx.config.agency_id, note);
+          void notifyAdmins(note);
         }
         return { ok: true, handed_off: true };
       }

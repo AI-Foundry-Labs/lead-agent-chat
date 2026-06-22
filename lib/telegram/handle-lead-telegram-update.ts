@@ -1,28 +1,26 @@
 /**
  * Main Telegram update dispatcher.
  *
- * Branches on chat.type:
- *   private  → handle-private-telegram-message.ts (admin/lead DM flows)
- *   group/supergroup → group routing:
- *       /link <token>          → bind group to agency + create 🛠 Master topic
- *       Master topic           → main_assistant config agent (Phase 01)
- *       Topic 2 (assistant)    → operator copilot turn (can send_reply to lead)
- *       Topic 1 (conversation) → read-only mirror; typing → pointer to 🤖
- *       general / unknown      → ignore
+ * Branches by update kind / chat.type:
+ *   my_chat_member   → bot promoted to admin → auto-bind group to agency
+ *   private          → handle-private-telegram-message.ts (admin/lead DM flows)
+ *   group/supergroup → single master agent:
+ *       /link <token>  → bind group to agency + create 🛠 Master topic (fallback)
+ *       any thread     → handleMasterTopicMessage (main_assistant + slash commands)
  *
- * Echo-loop safety: is_bot filter + idempotency by update_id.
+ * Single-topic UX: no per-lead topics — every group message routes to the one
+ * master agent. Echo-loop safety: is_bot filter + idempotency by update_id.
  */
 
 import { consumeAgencyTelegramLink } from '@/lib/auth';
-import { getAgencyByTelegramGroup, bindTelegramGroupToAgency, setAgencyMasterTopic, getAgencyById } from '@/lib/db';
+import { getAgencyByTelegramGroup, getAgencyById } from '@/lib/db';
 import { getAdminByTelegramUserId } from '@/lib/db/telegram-links';
-import { sendTelegramMessage, getBot, createForumTopic } from '@/lib/telegram';
-import { enqueueGroupSend } from '@/lib/telegram/group-send-queue';
-import { verifyAgencyGroup } from '@/lib/telegram/verify-agency-group';
-import { routeGroupMessage } from '@/lib/telegram/route-group-message';
+import { sendTelegramMessage, getBot } from '@/lib/telegram';
 import {
-  handleOperatorTopicMessage,
-  handleConversationTopicMessage,
+  bindAgencyGroupAndEnsureMaster,
+  handleBotPromotedToAdmin
+} from '@/lib/telegram/bind-agency-group';
+import {
   handleMasterTopicMessage,
   handleAgentCallback
 } from '@/lib/telegram/handle-group-telegram-message';
@@ -85,39 +83,11 @@ async function handleAgencyGroupLink(
     );
     return;
   }
-  const result = await verifyAgencyGroup(
+  // Token resolved the agency; the shared helper handles verify + bind + Master.
+  await bindAgencyGroupAndEnsureMaster(
+    agencyId,
     chat as unknown as Record<string, unknown>,
     await getBotId()
-  );
-  if (!result.ok) {
-    await sendTelegramMessage(chatId, `❌ ${result.reason}`);
-    return;
-  }
-  await bindTelegramGroupToAgency(agencyId, chatId);
-
-  // Create the 🛠 Master topic if it doesn't exist yet (idempotent).
-  // We need the agency row to check whether it's already been set.
-  const agency = await getAgencyByTelegramGroup(chatId);
-  if (agency && agency.telegram_master_topic_id === null) {
-    const threadId = await createForumTopic(chatId, `🛠 Master — ${agency.name}`);
-    if (threadId !== null) {
-      await setAgencyMasterTopic(agencyId, threadId);
-      void enqueueGroupSend(
-        chatId,
-        "🛠 Topic Master prêt — envoyez un message ici pour configurer l'agence " +
-        '(critères, annonces, règles).\n' +
-        '🛠 Master topic ready — message here to configure the agency ' +
-        '(criteria, listings, rules).',
-        { threadId, kind: 'critical' }
-      );
-    } else {
-      console.warn('[group] createForumTopic failed for agency', agencyId, '— master topic not created');
-    }
-  }
-
-  await sendTelegramMessage(
-    chatId,
-    "✅ Groupe lié à l’agence.\n\nTout se passe dans le sujet 🛠 Master :\n• Écrivez du texte pour discuter avec l’assistant.\n• /help pour voir les commandes (/agent, /leads, /lead_history, /pool…)."
   );
 }
 
@@ -127,6 +97,16 @@ export async function handleTelegramUpdate(
   update: TelegramUpdate,
   opts: { silent?: boolean } = {}
 ): Promise<'admin' | 'lead' | 'group' | 'unlinked' | 'ignored'> {
+  // ── MY_CHAT_MEMBER branch (bot membership/rights changed) ─────────────────
+  // When the bot is promoted to admin in a supergroup, auto-bind the group to
+  // the agency of whoever promoted it (no /link token required).
+  if (update.my_chat_member) {
+    // Fan-out extras skip auto-bind: only the primary instance binds groups, so
+    // we don't double-create the Master topic across instances.
+    if (!opts.silent) await handleBotPromotedToAdmin(update, await getBotId());
+    return 'group';
+  }
+
   // ── CALLBACK_QUERY branch (inline-keyboard taps) ──────────────────────────
   // Inline-keyboard taps arrive as callback_query, not message.
   if (update.callback_query) {
@@ -186,28 +166,9 @@ export async function handleTelegramUpdate(
       return 'ignored';
     }
 
-    // 🛠 Master topic: check BEFORE per-lead routing (master id not in lead_telegram_topics).
-    if (
-      agency.telegram_master_topic_id !== null &&
-      msg.message_thread_id === agency.telegram_master_topic_id
-    ) {
-      await handleMasterTopicMessage(chatId, agency, fromId, text, msg.message_thread_id);
-      return 'group';
-    }
-
-    const route = await routeGroupMessage(chatId, msg.message_thread_id);
-
-    if (route.kind === 'topic2_assistant' && route.mapping) {
-      await handleOperatorTopicMessage(chatId, route.mapping, fromId, text);
-      return 'group';
-    }
-    if (route.kind === 'topic1_conversation' && route.mapping) {
-      await handleConversationTopicMessage(chatId, route.mapping);
-      return 'group';
-    }
-    // Single-topic UX: any other thread (General, Master, or unknown) is the one
-    // admin↔assistant surface — handle it there so the bot is never silent on a
-    // command/chat just because the admin used General instead of 🛠 Master.
+    // Single-topic UX: the group has exactly one master agent. Every thread
+    // (🛠 Master, General, or any other) routes to the master assistant — there
+    // are no per-lead topics anymore, so the bot is never silent on a command.
     await handleMasterTopicMessage(chatId, agency, fromId, text, msg.message_thread_id);
     return 'group';
   }

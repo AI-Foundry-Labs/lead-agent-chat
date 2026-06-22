@@ -13,6 +13,22 @@ export interface TelegramUpdate {
       message_thread_id?: number;
     };
   };
+  // Fired when the bot's own membership/rights in a chat change (e.g. promoted
+  // to admin). Used to auto-bind a group to an agency without a /link token.
+  my_chat_member?: {
+    chat?: {
+      id?: number | string;
+      // 'private' | 'group' | 'supergroup' | 'channel'
+      type?: string;
+      is_forum?: boolean;
+    };
+    // The user who changed the bot's status (added/promoted it).
+    from?: { id?: number | string; is_bot?: boolean };
+    // The bot's membership BEFORE the change.
+    old_chat_member?: { status?: string };
+    // The bot's membership AFTER the change ('administrator' when promoted).
+    new_chat_member?: { status?: string; can_manage_topics?: boolean };
+  };
   message?: {
     // Per-chat message id — used to react to / reply to a specific message.
     message_id?: number;

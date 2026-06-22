@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { promises as dns } from 'node:dns';
 import { getLeadByEmail, createLead } from '@/lib/db';
-import { getOrCreateLeadTopics } from '@/lib/telegram/lead-topics';
 import { createMagicLink, destroyLeadSession } from '@/lib/auth';
 import { sendEmail, buildMagicLinkEmail } from '@/lib/email';
 import { getDefaultAgency } from '@/lib/db/agencies';
@@ -61,11 +60,6 @@ export async function POST(request: Request) {
   let lead = await getLeadByEmail(email, agencyId);
   if (!lead) {
     lead = await createLead({ agency_id: agencyId, channel: 'web', email });
-    // Provision Telegram topics for the new lead (off response path).
-    const newLeadId = lead.id;
-    void getOrCreateLeadTopics(agencyId, newLeadId).catch((err) =>
-      console.error('[lead-request-link] getOrCreateLeadTopics failed', newLeadId, err)
-    );
   }
 
   const url = await createMagicLink(lead.id, email);

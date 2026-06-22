@@ -40,7 +40,7 @@ export async function pushAgentNotification(args: {
     { generateStaffReport },
     { getOrCreateLeadOperator, getOrCreateMainAssistant, getAgencyById, getLeadById, addMessage, listAdminsByAgency },
     { enqueueGroupSend },
-    { formatAgentLabel },
+    { formatAgentLabel, buildLeadLabel },
     { broadcastConversationUpdate },
     { notifyAdmins }
   ] = await Promise.all([
@@ -55,8 +55,12 @@ export async function pushAgentNotification(args: {
   // 1. Compose the notice as the operator of this lead.
   const body = await generateStaffReport(event, lang);
   const lead = await getLeadById(leadId);
-  // AgentSession operator variant: { agent_kind: 'operator', lead_id: string }
-  const label = formatAgentLabel({ agent_kind: 'operator', lead_id: leadId }, lead?.name);
+  // AgentSession operator variant: { agent_kind: 'operator', lead_id: string }.
+  // Use buildLeadLabel so anonymous visitors show "Visiteur #N", not "Anonymous".
+  const label = formatAgentLabel(
+    { agent_kind: 'operator', lead_id: leadId },
+    lead ? buildLeadLabel(lead) : null
+  );
   const content = `${label} — ${body}`;
 
   // 2. Resolve the two conversations (single admin per agency).

@@ -5,8 +5,31 @@ import {
   buildLeadsKeyboard,
   buildLeadPickerKeyboard,
   formatAgentLabel,
+  buildLeadLabel,
   AGENT_PAGE_SIZE,
 } from '../../lib/telegram/agent-command';
+
+// ─── buildLeadLabel ────────────────────────────────────────────────────────
+describe('buildLeadLabel', () => {
+  it('prefers the name when present', () => {
+    assert.equal(buildLeadLabel({ name: 'Marie D.', email: 'm@x.fr', anon_seq: 3 }), 'Marie D.');
+  });
+  it('falls back to email local-part when no name', () => {
+    assert.equal(buildLeadLabel({ name: null, email: 'jean@foo.com', anon_seq: 3 }), 'jean');
+  });
+  it('uses Visiteur #N for anonymous with anon_seq', () => {
+    assert.equal(buildLeadLabel({ name: null, email: null, anon_seq: 7 }), 'Visiteur #7');
+  });
+  it('disambiguates two anonymous leads by seq', () => {
+    assert.notEqual(
+      buildLeadLabel({ name: null, email: null, anon_seq: 1 }),
+      buildLeadLabel({ name: null, email: null, anon_seq: 2 })
+    );
+  });
+  it('falls back to Anonymous when nothing is known', () => {
+    assert.equal(buildLeadLabel({ name: null, email: null, anon_seq: null }), 'Anonymous');
+  });
+});
 
 // ─── buildAgentKeyboard ────────────────────────────────────────────────────
 
@@ -138,10 +161,10 @@ describe('formatAgentLabel', () => {
       '👤 Operator · Marie'
     );
   });
-  it('falls back to "lead" when name missing', () => {
+  it('falls back to "Anonymous" when name missing', () => {
     assert.equal(
       formatAgentLabel({ agent_kind: 'operator', lead_id: 'l1' }, null),
-      '👤 Operator · lead'
+      '👤 Operator · Anonymous'
     );
   });
 });

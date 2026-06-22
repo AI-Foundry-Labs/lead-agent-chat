@@ -15,7 +15,7 @@ import {
   getVisibleMessages,
   listAnonymousVisitorThreads,
 } from '@/lib/db';
-import { buildLeadsKeyboard, buildLeadPickerKeyboard } from '@/lib/telegram/agent-command';
+import { buildLeadsKeyboard, buildLeadPickerKeyboard, buildLeadLabel } from '@/lib/telegram/agent-command';
 import type { Agency } from '@/lib/db/agencies';
 import type { Lead } from '@/lib/types';
 
@@ -39,18 +39,22 @@ function clip(s: string, max = 3800): string {
 function findLead(leads: Lead[], query: string): Lead | undefined {
   const q = query.toLowerCase();
   return leads.find(
-    (l) => (l.name ?? '').toLowerCase().includes(q) || (l.email ?? '').toLowerCase().includes(q)
+    (l) =>
+      (l.name ?? '').toLowerCase().includes(q) ||
+      (l.email ?? '').toLowerCase().includes(q) ||
+      buildLeadLabel(l).toLowerCase().includes(q) ||
+      (l.anon_seq != null && q.replace(/[^0-9]/g, '') === String(l.anon_seq))
   );
 }
 
 function leadLine(l: Lead): string {
-  const who = l.name ?? l.email ?? 'Anonymous';
+  const who = buildLeadLabel(l);
   const pot = l.potential_status ? `/${l.potential_status}` : '';
   return `• ${who} — ${l.status}${pot}`;
 }
 
 function leadButtons(leads: Lead[]) {
-  return leads.map((l) => ({ id: l.id, label: l.name ?? l.email ?? 'Anonymous' }));
+  return leads.map((l) => ({ id: l.id, label: buildLeadLabel(l) }));
 }
 
 /**
@@ -108,7 +112,7 @@ export async function tryHandleMasterCommand(
       const lead = findLead(await listLeads(agency.id), arg);
       if (!lead) return reply(`❌ Lead introuvable : "${arg}"`), true;
       const lines = [
-        `👤 ${lead.name ?? '—'} <${lead.email ?? '—'}>`,
+        `👤 ${buildLeadLabel(lead)}${lead.email ? ` <${lead.email}>` : ''}`,
         `Statut: ${lead.status}${lead.potential_status ? ` · ${lead.potential_status}` : ''}`,
         lead.score_reason ? `Raison: ${lead.score_reason}` : null,
         Object.keys(lead.qual_values ?? {}).length
@@ -142,7 +146,7 @@ export async function tryHandleMasterCommand(
       const body = msgs.length
         ? msgs.map((m) => `${icon[m.role] ?? m.role}: ${m.content}`).join('\n')
         : '(aucun message)';
-      reply(`💬 ${lead.name ?? lead.email ?? 'Lead'} — ${msgs.length} dernier(s) message(s):\n${body}`);
+      reply(`💬 ${buildLeadLabel(lead)} — ${msgs.length} dernier(s) message(s):\n${body}`);
       return true;
     }
 

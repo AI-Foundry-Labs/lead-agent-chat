@@ -56,8 +56,9 @@ async function main() {
   const url = `${base.replace(/\/$/, '')}/api/telegram`;
   await bot.api.setWebhook(url, {
     secret_token: secret,
-    // We only handle message updates today; widen if callback queries etc. are added.
-    allowed_updates: ['message']
+    // message: chat/group messages · callback_query: inline-keyboard taps
+    // my_chat_member: bot promoted to admin → auto-bind group to agency.
+    allowed_updates: ['message', 'callback_query', 'my_chat_member']
   });
   console.log(`[webhook] set to ${url}`);
   const info = await bot.api.getWebhookInfo();

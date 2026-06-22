@@ -3,10 +3,8 @@
  * stays under 200 lines.
  *
  * Handlers:
- *   handleOperatorTopicMessage   — Topic 2 (🤖 Assistant): operator copilot turn.
- *   handleConversationTopicMessage — Topic 1 (💬 Conversation): read-only pointer.
- *   handleMasterTopicMessage     — 🛠 Master topic: /agent hub + subagent dispatch.
- *   handleAgentCallback          — Inline-keyboard tap (callback_query) in Master topic.
+ *   handleMasterTopicMessage — 🛠 Master topic: /agent hub + subagent dispatch.
+ *   handleAgentCallback      — Inline-keyboard tap (callback_query) in Master topic.
  */
 
 import { enqueueGroupSend } from '@/lib/telegram/group-send-queue';
@@ -14,76 +12,11 @@ import { resolveActingAdmin } from '@/lib/telegram/resolve-agency-admin';
 import { runAgentTurn } from '@/lib/agent/run';
 import { getOrCreateMainAssistant, getOrCreateLeadOperator } from '@/lib/db/conversations';
 import { listLeads, getLeadById } from '@/lib/db';
-import type { LeadTelegramTopics } from '@/lib/db/lead-telegram-topics';
 import type { Agency } from '@/lib/db/agencies';
-import { parseAgentCommand, buildAgentKeyboard, formatAgentLabel } from '@/lib/telegram/agent-command';
+import { parseAgentCommand, buildAgentKeyboard, formatAgentLabel, buildLeadLabel } from '@/lib/telegram/agent-command';
 import { getAgentSession, setAgentSession, resolveActiveActor } from '@/lib/db/telegram-agent-sessions';
 import { sendTelegramKeyboard } from '@/lib/telegram/send-keyboard';
 import { tryHandleMasterCommand } from '@/lib/telegram/master-commands';
-
-// ─── Topic 2 (🤖 Assistant): operator copilot turn ────────────────────────
-
-/**
- * Operator copilot turn in Topic 2.
- * Unmapped sender → bilingual rejection (red-team C2 — no silent fallback).
- * Reply posted into Topic 2 ONLY via kind:'critical' queue entry.
- */
-export async function handleOperatorTopicMessage(
-  chatId: string,
-  mapping: LeadTelegramTopics,
-  fromId: string,
-  text: string
-): Promise<void> {
-  if (!mapping.operator_conversation_id) {
-    console.warn('[group] Topic 2: no operator_conversation_id for lead', mapping.lead_id);
-    return;
-  }
-  // Group is agency-private → any member is trusted; attribute to the sender's
-  // linked admin or fall back to the agency's primary admin.
-  const admin = await resolveActingAdmin(fromId, mapping.agency_id);
-  if (!admin) {
-    void enqueueGroupSend(
-      chatId,
-      '❌ Aucun administrateur trouvé pour cette agence.\n' +
-      '❌ No admin found for this agency.',
-      { threadId: mapping.assistant_topic_id, kind: 'critical' }
-    );
-    return;
-  }
-  const result = await runAgentTurn(
-    mapping.operator_conversation_id,
-    text,
-    { type: 'operator', leadId: mapping.lead_id, adminId: admin.id, adminName: admin.name }
-  );
-  if (result.reply.trim()) {
-    // Post into Topic 2 only — dispatchReply skips 'operator' type so the
-    // customer channel is never touched.
-    void enqueueGroupSend(chatId, result.reply, {
-      threadId: mapping.assistant_topic_id,
-      kind: 'critical'
-    });
-  }
-}
-
-// ─── Topic 1 (💬 Conversation): read-only mirror ──────────────────────────
-
-/**
- * Topic 1 is READ-ONLY: shows the lead↔agent conversation.
- * Admins typing here get a pointer back to 🤖 Assistant topic.
- */
-export async function handleConversationTopicMessage(
-  chatId: string,
-  mapping: LeadTelegramTopics
-): Promise<void> {
-  void enqueueGroupSend(
-    chatId,
-    'ℹ️ Ce fil affiche seulement la conversation. Pour répondre au client, ' +
-    "donnez la consigne à l'assistant dans le sujet 🤖 Assistant, ou utilisez l'interface web.\n" +
-    'ℹ️ This thread only shows the conversation. To reply to the customer, instruct the ' +
-    'assistant in the 🤖 Assistant topic, or use the web interface.',
-    { threadId: mapping.conversation_topic_id, kind: 'critical' }
-  );
-}
 
 // ─── 🛠 Master topic: /agent hub + subagent dispatch ─────────────────────
 
@@ -122,11 +55,11 @@ export async function handleMasterTopicMessage(
     // /agent — show picker (Main + all leads, highlight active)
     if (cmd.kind === 'show') {
       const allLeads = await listLeads(agency.id);
-      const leads = allLeads.map((l) => ({ id: l.id, label: l.name ?? l.email ?? 'Anonymous' }));
+      const leads = allLeads.map((l) => ({ id: l.id, label: buildLeadLabel(l) }));
       const session = await getAgentSession(agency.id);
       const activeLeadId = session?.agent_kind === 'operator' ? session.lead_id : null;
-      const current = formatAgentLabel(session, activeLeadId
-        ? (await getLeadById(activeLeadId))?.name : null);
+      const activeLead = activeLeadId ? await getLeadById(activeLeadId) : null;
+      const current = formatAgentLabel(session, activeLead ? buildLeadLabel(activeLead) : null);
       await sendTelegramKeyboard(
         chatId,
         `Actuel : ${current}\nChoisissez l'agent :`,
@@ -147,14 +80,18 @@ export async function handleMasterTopicMessage(
     if (cmd.kind === 'set_lead') {
       const q = cmd.query.toLowerCase();
       const match = (await listLeads(agency.id)).find(
-        (l) => (l.name ?? '').toLowerCase().includes(q) || (l.email ?? '').toLowerCase().includes(q)
+        (l) =>
+          (l.name ?? '').toLowerCase().includes(q) ||
+          (l.email ?? '').toLowerCase().includes(q) ||
+          buildLeadLabel(l).toLowerCase().includes(q) ||
+          (l.anon_seq != null && q.replace(/[^0-9]/g, '') === String(l.anon_seq))
       );
       if (!match) {
         void enqueueGroupSend(chatId, `❌ Lead introuvable : "${cmd.query}"`, { threadId, kind: 'critical' });
         return;
       }
       await setAgentSession(agency.id, { agent_kind: 'operator', lead_id: match.id });
-      void enqueueGroupSend(chatId, `✅ Agent : ${formatAgentLabel({ agent_kind: 'operator', lead_id: match.id }, match.name)}`, { threadId, kind: 'critical' });
+      void enqueueGroupSend(chatId, `✅ Agent : ${formatAgentLabel({ agent_kind: 'operator', lead_id: match.id }, buildLeadLabel(match))}`, { threadId, kind: 'critical' });
       return;
     }
 
@@ -174,7 +111,7 @@ export async function handleMasterTopicMessage(
       });
       if (result.reply.trim()) {
         void enqueueGroupSend(chatId,
-          `${formatAgentLabel(session, lead?.name)} — ${result.reply}`,
+          `${formatAgentLabel(session, lead ? buildLeadLabel(lead) : null)} — ${result.reply}`,
           { threadId, kind: 'critical' });
       }
       return;

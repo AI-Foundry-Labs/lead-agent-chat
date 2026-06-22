@@ -36,6 +36,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env.local
 .env
+.env.prod-backup
 
 # vercel
 .vercel
@@ -60,3 +61,4 @@ next-env.d.ts
 /public/uploads/
 
 .claude/.next-root-bak/
+.claude/

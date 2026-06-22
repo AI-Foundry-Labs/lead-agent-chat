@@ -69,32 +69,32 @@ Theo dõi & xử lý khách ngay trên điện thoại.
 4. **Phong bot làm Admin**, bật quyền **Manage Topics**.
 
 ### 5.2. Liên kết nhóm với agency (làm 1 lần)
+
+**Cách 1: Auto-bind (tự động, nên dùng)**
+1. Ai đó **có quyền Admin trong nhóm** → go to bot settings → nhấn "Promote" hoặc tương đương để grant admin.
+   - **Điều kiện:** người đó phải **đã link Telegram tại web `/admin`** từ trước (nếu chưa thì dùng Cách 2).
+2. Bot tự động nhận diện, xác nhận agency, tạo topic **🛠 Master**.
+
+**Cách 2: Fallback (/link token)**
 1. Web `/admin` → bấm **"Lier Telegram"** → nhận dòng `/link <mã>`.
 2. **Dán `/link <mã>` vào nhóm Telegram.**
-3. Bot xác nhận "✅ đã liên kết" và tự tạo topic **🛠 Master** (xem §5.6).
+3. Bot xác nhận "✅ đã liên kết" và tự tạo topic **🛠 Master**.
 
-> Nếu nhóm đã liên kết từ trước (chưa có topic 🛠 Master) → `/link` lại bằng mã mới để bot tạo topic Master.
+### 5.3. Chỉ 1 topic 🛠 Master (new flow)
 
-### 5.3. Mỗi khách → 2 chủ đề (topic) riêng trong nhóm
+Nhóm giờ có **1 topic 🛠 Master duy nhất** (chung cho cả agency, không per-lead). Tất cả tin khách đều route vào đây qua agent.
 
-| Topic | Vai trò |
-|-------|---------|
-| **💬 Conversation** | **Chỉ hiển thị** (read-only) toàn bộ hội thoại với khách. Có icon phân biệt: 🧑 Lead (khách) · 🤖 Agent (AI) · 🧑‍💼 Conseiller (bạn rep qua web). **Không gõ ở đây** — gõ vào chỉ nhận lời nhắc dùng 🤖. |
-| **🤖 Assistant** | **Copilot riêng** cho khách đó. Bạn **ra lệnh** cho AI ở đây. Hỏi về khách, nhờ soạn, và **ra lệnh gửi tin tới khách**. |
+**Cách rep khách (2 cách):**
 
-### 5.4. Cách rep khách khi handoff (2 cách)
+**Cách A — qua Web (recommended):**
+- Web `/admin` → tab **Conversations** → mở hội thoại → rep trực tiếp.
+- Tin tới khách hiện luôn trong Master topic (icon 🤖 Agent).
 
-**Cách A — qua Telegram (Topic 🤖 Assistant):**
-Vào Topic 🤖 của khách, **ra lệnh** cho AI, ví dụ:
-> "Trả lời khách: bên em giảm được 5%, anh thấy ổn không?"
-> hoặc "Gửi khách đúng câu này: Em xác nhận lịch xem nhà 15h thứ 7."
-
-→ AI gửi tin tới khách (web/email/Telegram tùy kênh khách dùng) → tin cũng hiện trong Topic 💬 (icon 🤖 Agent).
-
-**Cách B — qua Web:**
-`/admin` → tab **Conversations** → mở hội thoại → rep trực tiếp. Tin tới khách + hiện trong Topic 💬 (icon 🧑‍💼 Conseiller).
-
-> Topic 💬 luôn là **bản ghi đầy đủ** mọi tin với khách, rep từ đâu cũng hiện ở đó.
+**Cách B — qua Telegram:**
+- Nhắn lệnh vào Master topic, ví dụ:
+  > `/lead_history <lead_id>` — xem chat với khách
+  > "Gửi tin: Em xác nhận lịch xem nhà thứ 7 15h."
+- Agent xử lý + gửi tới khách.
 
 ### 5.5. Trả quyền cho AI
 Sau khi xử lý xong, vào tab **Conversations** trên web → nút trả về chế độ agent (release). AI tiếp tục tự động.
@@ -137,9 +137,7 @@ Ví dụ nhắn trong topic 🛠 Master:
 |-----------|-----------|
 | Bot không phản hồi trong nhóm | Bot đã là **Admin nhóm** + **Manage Topics** chưa? Privacy mode của bot đã tắt chưa? |
 | `/link` báo lỗi | Nhóm chưa bật **Topics**, hoặc bot chưa đủ quyền — sửa rồi `/link` lại |
-| Không tạo topic cho khách | Nhóm chưa liên kết, hoặc bot mất quyền |
-| Gõ trong 💬 không gửi cho khách | Đúng thiết kế — 💬 chỉ xem. Dùng Topic 🤖 hoặc web để rep |
-| Không thấy topic 🛠 Master | Nhóm liên kết trước khi có tính năng — `/link` lại bằng mã mới |
+| Không thấy topic 🛠 Master | Nhóm chưa liên kết đúng cách. Thử: (1) Promote bot lại (nếu quản trị viên đã link web), hoặc (2) `/link <mã>` từ web `/admin` |
 | Đổi config trong 🛠 Master nhưng web chưa đổi | Đợi 1-2s (tự refresh); nếu vẫn chưa, reload trang |
 | Import BĐS bị thiếu vài cái | Agent báo cái nào lỗi (thường thiếu giá/diện tích) — bổ sung rồi gửi lại |
 | Khách không thấy bất động sản | Chưa thêm ở tab **Biens** / chưa import cho đúng agency |
