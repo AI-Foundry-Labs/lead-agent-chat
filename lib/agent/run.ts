@@ -18,6 +18,7 @@ import { matchRule } from '@/lib/agent/rules';
 import { reportHandoffBriefing } from '@/lib/agent/report-handoff-briefing';
 import { detectMessageLang } from '@/lib/agent/detect-lang';
 import { pushAgentNotification } from '@/lib/agent/push-agent-notification';
+import { notifyAdmins } from '@/lib/notify';
 import { buildLeadSystemPrompt } from '@/lib/agent/prompts';
 import { buildOperatorSystemPrompt } from '@/lib/agent/prompts/operator-prompts';
 import { buildCrossThreadContextBlock } from '@/lib/agent/cross-thread-context';
@@ -141,6 +142,9 @@ export async function runAgentTurn(
             event: { kind: 'handoff', rule: matched.description, message: message.slice(0, 300) },
             lang: detectedLang
           });
+        } else {
+          // Anonymous visitor — no lead_id, fallback to DM all linked admins.
+          void notifyAdmins(`🚨 Handoff — visiteur anonyme\nRègle : ${matched.description}\nMessage : ${message.slice(0, 200)}`);
         }
         // Lead reports up: generate a briefing from this lead's own context and post it
         // into the admin's main_assistant panel (fire-and-forget — no separate operator agent).

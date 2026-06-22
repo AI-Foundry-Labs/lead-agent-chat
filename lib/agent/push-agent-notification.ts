@@ -41,13 +41,15 @@ export async function pushAgentNotification(args: {
     { getOrCreateLeadOperator, getOrCreateMainAssistant, getAgencyById, getLeadById, addMessage, listAdminsByAgency },
     { enqueueGroupSend },
     { formatAgentLabel },
-    { broadcastConversationUpdate }
+    { broadcastConversationUpdate },
+    { notifyAdmins }
   ] = await Promise.all([
     import('@/lib/agent/staff-report'),
     import('@/lib/db'),
     import('@/lib/telegram/group-send-queue'),
     import('@/lib/telegram/agent-command'),
-    import('@/lib/events')
+    import('@/lib/events'),
+    import('@/lib/notify')
   ]);
 
   // 1. Compose the notice as the operator of this lead.
@@ -74,11 +76,13 @@ export async function pushAgentNotification(args: {
     broadcastConversationUpdate(t.conversation_id);
   }
 
-  // 4. Send to the Master topic chat channel (non-fatal on failure).
+  // 4. Send notification: DM to all linked admins (primary), group as secondary if linked.
   try {
+    // DM all admins who have linked their personal Telegram.
+    void notifyAdmins(content);
+
+    // Also send to group topic when linked (secondary channel).
     const agency = await getAgencyById(agencyId);
-    // Single-topic UX: send to the group whenever it's linked. Use the Master
-    // topic when set, otherwise fall back to General (threadId undefined).
     if (agency?.telegram_group_chat_id) {
       void enqueueGroupSend(agency.telegram_group_chat_id, content, {
         threadId: agency.telegram_master_topic_id ?? undefined,

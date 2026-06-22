@@ -106,7 +106,7 @@ export async function handleMasterTopicMessage(
   try {
     const admin = await resolveActingAdmin(fromId, agency.id);
     if (!admin) {
-      void enqueueGroupSend(chatId, '❌ Aucun administrateur trouvé. / No admin found.', {
+      void enqueueGroupSend(chatId, '❌ Aucun administrateur trouvé.', {
         threadId, kind: 'critical'
       });
       return;
@@ -122,14 +122,14 @@ export async function handleMasterTopicMessage(
     // /agent — show picker (Main + all leads, highlight active)
     if (cmd.kind === 'show') {
       const allLeads = await listLeads(agency.id);
-      const leads = allLeads.map((l) => ({ id: l.id, label: l.name ?? l.email ?? l.id.slice(0, 8) }));
+      const leads = allLeads.map((l) => ({ id: l.id, label: l.name ?? l.email ?? 'Anonymous' }));
       const session = await getAgentSession(agency.id);
       const activeLeadId = session?.agent_kind === 'operator' ? session.lead_id : null;
       const current = formatAgentLabel(session, activeLeadId
         ? (await getLeadById(activeLeadId))?.name : null);
       await sendTelegramKeyboard(
         chatId,
-        `Actuel : ${current}\nChoisissez l'agent : / Choose agent:`,
+        `Actuel : ${current}\nChoisissez l'agent :`,
         buildAgentKeyboard(leads, { activeLeadId }),
         threadId
       );
@@ -190,7 +190,7 @@ export async function handleMasterTopicMessage(
     }
   } catch (err) {
     console.error('[master-topic] handleMasterTopicMessage error:', err);
-    void enqueueGroupSend(chatId, '❌ Erreur interne. / Internal error.', { threadId, kind: 'critical' });
+    void enqueueGroupSend(chatId, '❌ Erreur interne.', { threadId, kind: 'critical' });
   }
 }
 

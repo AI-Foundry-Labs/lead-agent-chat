@@ -193,20 +193,20 @@ export function ConfigPanel({
         </div>
       </AdminSection>
 
-      <AdminSection title="Mon profil assistant / My assistant profile">
+      <AdminSection title={t.cfg_persona_title}>
         <p className="mb-2 text-sm text-muted-foreground">
-          Décrivez votre rôle, style de communication et préférences. Le bot utilisera ce contexte pour adapter ses réponses.
+          {t.cfg_persona_desc}
         </p>
         <textarea
           value={persona}
           onChange={(e) => setPersona(e.target.value)}
           onBlur={savePersona}
           rows={5}
-          placeholder={`Ex: Directeur commercial senior, préfère des résumés en bullet points, répond le soir. Tutoiement bienvenu.\nEx: Senior sales director, prefers concise bullet summaries, no small talk.`}
+          placeholder={t.cfg_persona_ph}
           className={cn(inputClass, 'min-h-[120px] w-full resize-y text-sm')}
         />
         {personaSaving && (
-          <p className="mt-1 text-xs text-muted-foreground">Enregistrement…</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t.cfg_persona_saving}</p>
         )}
       </AdminSection>
 

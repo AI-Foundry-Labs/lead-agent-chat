@@ -117,12 +117,7 @@ async function handleAgencyGroupLink(
 
   await sendTelegramMessage(
     chatId,
-    "✅ Groupe lié à l'agence.\n" +
-    '✅ Group linked to the agency.\n\n' +
-    'Tout se passe dans le sujet 🛠 Master / Everything happens in the 🛠 Master topic:\n' +
-    '• Écrivez du texte pour discuter avec l’assistant. / Type to chat with the assistant.\n' +
-    '• /help pour voir les commandes (/agent, /leads, /lead_history, /pool…).\n' +
-    '• /help to list commands (/agent, /leads, /lead_history, /pool…).'
+    "✅ Groupe lié à l’agence.\n\nTout se passe dans le sujet 🛠 Master :\n• Écrivez du texte pour discuter avec l’assistant.\n• /help pour voir les commandes (/agent, /leads, /lead_history, /pool…)."
   );
 }
 
