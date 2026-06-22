@@ -10,6 +10,7 @@ import {
   admins,
   agencies
 } from '../lib/db';
+import { getLeadByEmail, createLead } from '../lib/db/leads';
 import { hashPassword } from '../lib/auth';
 import type { Criterion } from '../lib/types';
 
@@ -290,6 +291,28 @@ async function seedAdmins(agencyId: string) {
     name: process.env.SEED_ADMIN_FR_NAME ?? 'Admin FR',
     preferredLang: 'fr'
   });
+
+  // Test accounts for QA / demo purposes.
+  await ensureAdmin({ agencyId, email: 'test1@test.com', password: 'test123', name: 'Test User 1', preferredLang: 'fr' });
+  await ensureAdmin({ agencyId, email: 'test2@test.com', password: 'test123', name: 'Test User 2', preferredLang: 'en' });
+  await ensureAdmin({ agencyId, email: 'demo@agence-lumiere.fr', password: 'demo123', name: 'Demo Camille', preferredLang: 'fr' });
+}
+
+async function seedLeads(agencyId: string) {
+  const testLeads = [
+    { email: 'lead1@test.com', name: 'Test Lead 1' },
+    { email: 'lead2@test.com', name: 'Test Lead 2' },
+    { email: 'buyer@test.com', name: 'Demo Buyer' }
+  ];
+  for (const l of testLeads) {
+    const existing = await getLeadByEmail(l.email, agencyId);
+    if (existing) {
+      console.log(`• Lead already present: ${l.email}`);
+      continue;
+    }
+    await createLead({ agency_id: agencyId, channel: 'web', email: l.email, name: l.name });
+    console.log(`✓ Lead created: ${l.email}`);
+  }
 }
 
 async function main() {
@@ -298,6 +321,7 @@ async function main() {
   await seedRules(agencyId);
   await seedListings(agencyId);
   await seedAdmins(agencyId);
+  await seedLeads(agencyId);
   console.log('Seed complete.');
   process.exit(0);
 }
