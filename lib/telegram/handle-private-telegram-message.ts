@@ -147,12 +147,13 @@ export async function handleAdminMessage(
     return true;
   }
 
-  // Default: main_assistant
+  // Default: main_assistant.
+  // dispatchReply (inside runAgentTurn) already sends the reply to admin's Telegram DM
+  // for main_assistant conversations — do NOT call send() here or the reply is duplicated.
   const conv = await getOrCreateMainAssistant(admin.id, agency.id);
-  const result = await runAgentTurn(conv.id, text, {
+  await runAgentTurn(conv.id, text, {
     type: 'main_assistant', adminId: admin.id, adminName: admin.name ?? null,
   });
-  if (result.reply.trim()) send(result.reply);
   return true;
 }
 

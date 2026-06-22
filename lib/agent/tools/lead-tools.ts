@@ -247,6 +247,9 @@ export function buildLeadTools(ctx: AgentContext) {
             event: { kind: 'handoff_requested', reason },
             lang: ctx.lang
           });
+        } else {
+          // Anonymous visitor — fallback to DM all linked admins.
+          void notifyAdmins(`🚨 Handoff demandé — visiteur anonyme\nRaison : ${reason}`);
         }
         return { ok: true, handed_off: true };
       }
