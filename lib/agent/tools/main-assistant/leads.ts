@@ -165,9 +165,6 @@ export function buildLeadsTools(ctx: AgentContext, adminId: string) {
         // Emit the erasure audit BEFORE deletion. No PII in details (CNIL: no trace);
         // target_lead_id has no FK so this row survives the lead's removal.
         await recordAudit({ agency_id: agencyId, admin_id: adminId, action: 'lead_erasure_executed', target_lead_id: lead_id });
-        // Import lazily to avoid circular deps at module load time
-        const { closeLeadTopics } = await import('@/lib/db');
-        await closeLeadTopics(lead_id).catch(() => {});
         const { deleteConversationsByLeadId } = await import('@/lib/db');
         await deleteConversationsByLeadId(lead_id);
         const { deleteLead } = await import('@/lib/db');

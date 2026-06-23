@@ -4,7 +4,7 @@ import {
   addMessage
 } from '@/lib/db';
 import { requireAdmin, toAuthResponse } from '@/lib/auth';
-import { dispatchReply, mirrorLeadTurnToTopic } from '@/lib/dispatch';
+import { dispatchReply } from '@/lib/dispatch';
 import { broadcastConversationUpdate } from '@/lib/events';
 import { notifyAgency } from '@/lib/telegram/notify-agency';
 import { listingSchema, listingUpdateSchema, criterionSchema } from '@/lib/types';
@@ -79,10 +79,6 @@ export async function POST(req: Request) {
         if (!conv) return notFound();
         await addMessage({ conversation_id: conv.id, role: 'admin', content });
         await dispatchReply(conv, content);
-        // Mirror web admin reply into Topic 1 so Telegram stays in sync.
-        void mirrorLeadTurnToTopic(conv, 'admin', content).catch((e) =>
-          console.error('[actions] mirrorLeadTurnToTopic failed — non-fatal:', e)
-        );
         broadcastConversationUpdate(conv.id);
         return ok();
       }

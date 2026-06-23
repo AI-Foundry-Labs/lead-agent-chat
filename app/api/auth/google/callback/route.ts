@@ -1,7 +1,5 @@
 import { eq } from 'drizzle-orm';
 import { db, admins, getLeadByEmail, createLead, updateLead } from '@/lib/db';
-import { getOrCreateLeadTopics } from '@/lib/telegram/lead-topics';
-import { syncLeadTopicTitles } from '@/lib/telegram/sync-lead-topic-titles';
 import { createAdminSession, setLeadCookie } from '@/lib/auth';
 import { fetchGoogleProfile, safeRedirectPath } from '@/lib/google-oauth';
 import { consumeOAuthState } from '@/lib/oauth-state';
@@ -76,17 +74,8 @@ export async function GET(request: Request) {
         email: profile.email,
         name: profile.name
       });
-      const newLeadId = lead.id;
-      void getOrCreateLeadTopics(agencyId, newLeadId).catch((err) =>
-        console.error('[google-callback] getOrCreateLeadTopics failed', newLeadId, err)
-      );
     } else if (profile.name && !lead.name) {
       lead = await updateLead(lead.id, { name: profile.name });
-      // Real name now known — re-sync both topic titles (off-path, guarded).
-      const syncLeadId = lead.id;
-      void syncLeadTopicTitles(agencyId, syncLeadId).catch((err) =>
-        console.error('[google-callback] syncLeadTopicTitles failed', syncLeadId, err)
-      );
     }
 
     await setLeadCookie(lead.id, { ...meta, persistent: true });

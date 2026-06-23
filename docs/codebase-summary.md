@@ -39,14 +39,16 @@ lib/
 │   └── prompts.ts               # buildLeadSystemPrompt, buildAdminSystemPrompt
 │
 ├── telegram/
-│   ├── route-group-message.ts   # Main dispatcher for group messages (routing table logic)
+│   ├── bind-agency-group.ts     # Auto-bind group on bot promotion + create Master topic (my_chat_member)
 │   ├── group-send-queue.ts      # Per-group throttle queue + drop policy (20 msg/min)
-│   ├── handle-lead-telegram-update.ts  # Private DM handler (visitor /start flow)
+│   ├── handle-lead-telegram-update.ts  # Webhook router: group/DM + my_chat_member + callback_query
 │   ├── handle-private-telegram-message.ts  # Extracted DM dispatch logic
-│   ├── notify-agency.ts         # Send handoff/event notification to agency group
+│   ├── handle-group-telegram-message.ts  # Group message routing (Master topic check → main_assistant)
+│   ├── handle-agent-callback.ts # Inline-keyboard callback_query handler (Master topic commands)
+│   ├── notify-agency.ts         # Push handoff/alert notifications to Master topic
 │   ├── verify-agency-group.ts   # Check update.chat.id ∈ registered groups
 │   ├── resolve-agency-admin.ts  # Telegram sender → admin lookup (with rejection on unmapped)
-│   └── lead-topics.ts           # Create/manage forum topics per lead
+│   └── [other helpers]          # Agent command parsing, topic creation, etc.
 │
 ├── scheduling/
 │   ├── deliver-due-scheduled-messages.ts  # F4a: claim-and-deliver loop (FOR UPDATE SKIP LOCKED)
@@ -93,14 +95,15 @@ env.example                      # Set TELEGRAM_WEBHOOK_SECRET, DATABASE_URL, et
 | `lib/db/agencies.ts` | Agency table queries, listing/rule scoping by agency. Includes `incrementAnonSeq`. |
 | `lib/agency-context.ts` | Host header → agency resolver; handles IPv6 dev hosts. |
 | `lib/db/agency-telegram-links.ts` | Token generation, group binding (`telegram_group_chat_id`). |
-| `lib/db/lead-telegram-topics.ts` | Map lead → (conversation_topic_id, assistant_topic_id). |
-| `lib/telegram/route-group-message.ts` | Main dispatcher for agency group messages. |
+| `lib/telegram/bind-agency-group.ts` | Auto-bind supergroup on bot promotion (my_chat_member), create 🛠 Master topic. Shared logic for /link fallback. |
+| `lib/telegram/bind-agency-group.ts` | Auto-bind supergroup to agency on bot promotion + create Master topic. |
 | `lib/telegram/group-send-queue.ts` | Per-group throttle queue (3s drain, ~20 msg/min). |
-| `lib/telegram/handle-lead-telegram-update.ts` | Rewritten: private DM flow (kept as-is). |
-| `lib/telegram/notify-agency.ts` | Handoff/event notifications to agency group. |
+| `lib/telegram/handle-lead-telegram-update.ts` | Webhook router: dispatch to group/DM handlers; check my_chat_member + callback_query. |
+| `lib/telegram/handle-group-telegram-message.ts` | Group message dispatcher: Master topic → main_assistant; other routes → handoff. |
+| `lib/telegram/handle-agent-callback.ts` | Inline-keyboard callback_query handler for Master topic slash commands. |
+| `lib/telegram/notify-agency.ts` | Push handoff/alert notifications proactively to Master topic. |
 | `lib/telegram/verify-agency-group.ts` | Check update is from a registered agency group. |
 | `lib/telegram/resolve-agency-admin.ts` | Sender (telegram_user_id) → admin lookup. |
-| `lib/telegram/lead-topics.ts` | Create/fetch per-lead forum topics. Includes `buildLeadDisplayName` with optional `anonSeq`. |
 | `lib/telegram/promote-anonymous-visitor.ts` | Promote anonymous leads: increment counter, attach lead, backfill Telegram topic. |
 | `scripts/migrate-add-agency.ts` | Migration: add `agencies` table + `agency_id` FK + backfill. |
 | `middleware.ts` (modified) | Set `x-agency-id` header (server-resolved, client-supplied stripped). |
@@ -129,7 +132,8 @@ env.example                      # Set TELEGRAM_WEBHOOK_SECRET, DATABASE_URL, et
 agencies
   id UUID PK
   name TEXT
-  telegram_group_chat_id BIGINT (nullable, until /link)
+  telegram_group_chat_id BIGINT (nullable, until /link or bot promotion)
+  telegram_master_topic_id INT (nullable, until Master topic created)
   config_json JSONB (criteria, etc.)
   anon_seq_counter INT (default 0) ← Per-agency counter for anonymous visitor sequencing
 
@@ -158,13 +162,7 @@ admins
   agency_id UUID FK → agencies (NEW)
   [name, email, telegram_user_id, etc.]
 
-lead_telegram_topics
-  lead_id UUID PK
-  conversation_id UUID PK
-  agency_id UUID FK → agencies
-  group_chat_id BIGINT FK → agencies.telegram_group_chat_id
-  conversation_topic_id INT ← Topic 1 (💬 lead↔agent mirror)
-  assistant_topic_id INT ← Topic 2 (🤖 operator copilot)
+[Per-lead topics REMOVED — all group messages route to Master topic via main_assistant]
 
 handoff_rules, agency_config, viewing_slots
   [all have agency_id FK]

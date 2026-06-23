@@ -13,12 +13,13 @@ import {
 } from '@/lib/db';
 import { broadcastConversationUpdate } from '@/lib/events';
 import { dispatchReply } from '@/lib/dispatch';
-import { reportTurnToTopic } from '@/lib/agent/report-turn-to-topic';
 import { matchRule } from '@/lib/agent/rules';
 import { reportHandoffBriefing } from '@/lib/agent/report-handoff-briefing';
 import { detectMessageLang } from '@/lib/agent/detect-lang';
 import { pushAgentNotification } from '@/lib/agent/push-agent-notification';
 import { notifyAdmins } from '@/lib/notify';
+import { notifyAgencyGroup } from '@/lib/telegram/notify-agency';
+import { promoteAnonymousVisitor } from '@/lib/telegram/promote-anonymous-visitor';
 import { buildLeadSystemPrompt } from '@/lib/agent/prompts';
 import { buildOperatorSystemPrompt } from '@/lib/agent/prompts/operator-prompts';
 import { buildCrossThreadContextBlock } from '@/lib/agent/cross-thread-context';
@@ -80,7 +81,7 @@ export async function runAgentTurn(
   const turnStart = Date.now();
   agentLog.info('agent.turn.start', { conversationId, actor: actor.type, messageLen: message.length, lang });
 
-  const conversation = await getConversation(conversationId);
+  let conversation = await getConversation(conversationId);
   if (!conversation) {
     agentLog.error('agent.turn.error', { conversationId, error: 'conversation_not_found' });
     throw new Error('conversation_not_found');
@@ -129,22 +130,37 @@ export async function runAgentTurn(
     const rules = await listActiveHandoffRules(conversation.agency_id);
     const matched = await matchRule(message, rules);
     if (matched) {
-      const lead = conversation.lead_id ? await getLeadById(conversation.lead_id) : null;
+      let lead = conversation.lead_id ? await getLeadById(conversation.lead_id) : null;
       // Only escalate once — skip if lead is already in handoff status.
       if (!lead || lead.status !== 'handoff') {
-        agentLog.info('agent.handoff', { conversationId, rule: matched.description, leadId: conversation.lead_id });
-        if (conversation.lead_id)
-          await updateLead(conversation.lead_id, { status: 'handoff' });
-        if (conversation.lead_id) {
+        // Anonymous visitor → promote to a real lead first so the admin gets a
+        // selectable identity ("Visiteur #N") in /agent instead of an opaque alert.
+        if (!conversation.lead_id) {
+          const promoted = await promoteAnonymousVisitor(conversation, conversation.agency_id, {
+            language: detectedLang
+          }).catch((e) => {
+            agentLog.warn('agent.handoff.promote.error', { conversationId, error: String(e) });
+            return null;
+          });
+          if (promoted) {
+            lead = promoted;
+            conversation = await getConversation(conversationId) ?? conversation;
+          }
+        }
+        agentLog.info('agent.handoff', { conversationId, rule: matched.description, leadId: lead?.id ?? null });
+        if (lead) await updateLead(lead.id, { status: 'handoff' });
+        if (lead) {
           void pushAgentNotification({
             agencyId: conversation.agency_id,
-            leadId: conversation.lead_id,
+            leadId: lead.id,
             event: { kind: 'handoff', rule: matched.description, message: message.slice(0, 300) },
             lang: detectedLang
           });
         } else {
-          // Anonymous visitor — no lead_id, fallback to DM all linked admins.
-          void notifyAdmins(`🚨 Handoff — visiteur anonyme\nRègle : ${matched.description}\nMessage : ${message.slice(0, 200)}`);
+          // Promotion failed (e.g. lost race) — still alert the Master topic.
+          const note = `🚨 Handoff — visiteur anonyme\nRègle : ${matched.description}\nMessage : ${message.slice(0, 200)}`;
+          void notifyAgencyGroup(conversation.agency_id, note);
+          void notifyAdmins(note);
         }
         // Lead reports up: generate a briefing from this lead's own context and post it
         // into the admin's main_assistant panel (fire-and-forget — no separate operator agent).
@@ -272,17 +288,9 @@ export async function runAgentTurn(
   }
 
   if (actor.type === 'lead') {
-    // Post a report-style summary of this turn into the conversation topic so staff
-    // read an internal "report to the boss" instead of the verbatim customer reply.
-    // Uses the agency language (lang), not the lead's detected language.
-    await reportTurnToTopic({
-      conversation: ctx.conversation,
-      leadMessage: message,
-      agentReply: storedContent,
-      lang
-    }).catch((e) =>
-      agentLog.warn('agent.report.turn.error', { conversationId, error: String(e) })
-    );
+    // Single-topic UX: per-lead topics are gone, so we no longer mirror every
+    // lead↔agent turn into Telegram (handoff/alerts go to the 🛠 Master topic via
+    // notifyAgency). Keep rolling thread-memory summaries for agent context.
     scheduleThreadMemorySummarize(conversationId);
   }
 

@@ -69,11 +69,15 @@ app/api/chat        web inbound (POST) + SSE stream; /api/email, /api/telegram, 
    (Telegram agency group if linked), and the lead-facing agent stops auto-replying.
 3. **Live config** — log in at `/admin`, tell the assistant "ajoute un critère quartier
    préféré". `update_criteria` rewrites the agency criteria; the next lead turn uses it.
-4. **Telegram agency group** — in `/admin` click *Lier Telegram*, send `/link <token>` to
-   the bot in your agency's supergroup (forum). Two auto-created topics per lead:
-   **💬 Conversation** (live lead↔agent mirror + admin takeover) and **🤖 Assistant**
-   (internal copilot). Admins reply in the group to take over; `/resume` returns control
-   to the agent. Note: existing visitor lead-DM flow still works in parallel.
+4. **Telegram agency group** — create a supergroup (enable Topics), add the bot, and grant
+   it admin with *Manage Topics*. On promotion the bot **auto-binds** the group to your
+   agency — resolved via the admin who promoted it (their Telegram must be linked in
+   `/admin` first) — and creates a single **🛠 Master** topic. That topic IS the agency's
+   master agent: chat with `main_assistant` (criteria/listings/rules) and use slash
+   commands (`/leads`, `/lead_history`, `/agent`, `/pool`). Lead/handoff alerts are pushed
+   straight into 🛠 Master. Fallback: if the promoter isn't linked, send `/link <token>`
+   (token from *Lier Telegram* in `/admin`). No per-lead topics — one master agent per
+   group. Existing visitor lead-DM flow still works in parallel.
 
 ## Guardrails
 

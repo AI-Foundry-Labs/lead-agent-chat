@@ -12,7 +12,6 @@ import {
   createBookedViewing
 } from '@/lib/db';
 import { createCalendarEvent, getAvailableSlots, resolveSlotIso } from '@/lib/calendar';
-import { syncLeadTopicTitles } from '@/lib/telegram/sync-lead-topic-titles';
 import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
 import { formatSlot } from '@/lib/format';
 import type { AgentContext } from '@/lib/agent/tools/context';
@@ -103,11 +102,6 @@ export function buildViewingsTools(ctx: AgentContext) {
           summary: `Viewing booked by admin for ${listing.title}`
         });
         await updateLead(lead_id, { email, name: contact_name ?? lead.name ?? undefined, status: 'booked' });
-        if (contact_name && contact_name !== lead.name) {
-          void syncLeadTopicTitles(ctx.config.agency_id, lead_id).catch((e) =>
-            console.error('[main-assistant] syncLeadTopicTitles failed:', e)
-          );
-        }
         scheduleAppendLeadLongTermFacts(lead_id, [
           `viewing booked (by admin): ${listing.title} on ${formatSlot(slot_iso)}`,
           `contact: ${contact_name ?? lead.name ?? '—'} <${email}>`

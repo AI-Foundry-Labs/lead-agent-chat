@@ -14,7 +14,7 @@ import {
   buildLeadDisplayName,
   buildConversationTopicTitle,
   buildAssistantTopicTitle
-} from '../../lib/telegram/lead-topics';
+} from '../../lib/telegram/lead-title-builders';
 
 describe('buildLeadDisplayName', () => {
   describe('uses name when provided', () => {

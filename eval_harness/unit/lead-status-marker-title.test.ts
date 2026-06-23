@@ -11,9 +11,9 @@ import assert from 'node:assert/strict';
 import {
   buildLeadDisplayName,
   buildConversationTopicTitle,
-  buildAssistantTopicTitle
-} from '../../lib/telegram/lead-topics';
-import { STATUS_EMOJI } from '../../lib/telegram/sync-lead-topic-titles';
+  buildAssistantTopicTitle,
+  STATUS_EMOJI
+} from '../../lib/telegram/lead-title-builders';
 
 function markerTitle(
   status: keyof typeof STATUS_EMOJI,

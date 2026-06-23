@@ -70,12 +70,15 @@ async function main() {
       { command: 'lead', description: 'Détail d’un lead <nom|email>' },
       { command: 'lead_history', description: 'Historique conversation <nom|email>' },
       { command: 'pool', description: 'Visiteurs anonymes' },
+      { command: 'reset', description: 'Effacer l’historique de l’agent actif' },
       { command: 'help', description: 'Aide / liste des commandes' }
     ])
     .catch((e) => console.error('[telegram-dev] setMyCommands failed:', e));
 
   console.log('🤖 Telegram long-polling started. Send /start <token> to your bot.');
-  await bot.start({ allowed_updates: ['message', 'callback_query'] });
+  await bot.start({
+    allowed_updates: ['message', 'callback_query', 'my_chat_member']
+  });
 }
 
 main().catch((e) => {

@@ -13,6 +13,7 @@ import {
 } from '@/lib/db';
 import { getAvailableSlots, createCalendarEvent, resolveSlotIso } from '@/lib/calendar';
 import { notifyAdmins } from '@/lib/notify';
+import { notifyAgencyGroup } from '@/lib/telegram/notify-agency';
 import { formatPrice, formatSlot } from '@/lib/format';
 import { scheduleAppendLeadLongTermFacts } from '@/lib/agent/append-lead-long-term-facts';
 import { formatConversationForMemory } from '@/lib/agent/cross-thread-context';
@@ -20,8 +21,6 @@ import { issueLeadTelegramLinkToken } from '@/lib/auth';
 import { buildLeadTelegramLinkInfo } from '@/lib/telegram/build-lead-telegram-link';
 import { telegramConfigured } from '@/lib/telegram';
 import { cancelViewingWithMemory, rescheduleViewingWithMemory } from '@/lib/agent/viewing-actions';
-import { syncLeadStatusToTelegram } from '@/lib/telegram/lead-status-marker';
-import { syncLeadTopicTitles } from '@/lib/telegram/sync-lead-topic-titles';
 import { pushAgentNotification } from '@/lib/agent/push-agent-notification';
 import type { AgentContext } from './context';
 import { ensureLead } from './context';
@@ -94,7 +93,6 @@ export function buildLeadTools(ctx: AgentContext) {
       }),
       execute: async ({ values, potential_status, reason }) => {
         const lead = await ensureLead(ctx);
-        const prevPotential = lead.potential_status;
         const merged = { ...lead.qual_values, ...values };
         const allKeys = ctx.config.qualification_criteria.map((c) => c.key);
         const complete = allKeys.every((k) => merged[k]);
@@ -106,10 +104,6 @@ export function buildLeadTools(ctx: AgentContext) {
           status: complete && lead.status === 'active' ? 'qualified' : lead.status
         });
 
-        // Surface a hot/warm/cold change in the agency's Telegram topic (off-path, guarded).
-        void syncLeadStatusToTelegram(
-          ctx.config.agency_id, lead.id, prevPotential, potential_status, reason
-        ).catch((e) => console.error('[lead-tools] syncLeadStatusToTelegram failed:', e));
         scheduleAppendLeadLongTermFacts(
           lead.id,
           [
@@ -204,12 +198,6 @@ export function buildLeadTools(ctx: AgentContext) {
           name: contact_name ?? lead.name,
           status: 'booked'
         });
-        // A real name may now be known — re-sync both topic titles (off-path, guarded).
-        if (contact_name && contact_name !== lead.name) {
-          void syncLeadTopicTitles(ctx.config.agency_id, lead.id).catch((e) =>
-            console.error('[lead-tools] syncLeadTopicTitles failed:', e)
-          );
-        }
         const contact = contact_name ?? lead.name ?? email;
         void pushAgentNotification({
           agencyId: ctx.config.agency_id,
@@ -248,8 +236,11 @@ export function buildLeadTools(ctx: AgentContext) {
             lang: ctx.lang
           });
         } else {
-          // Anonymous visitor — fallback to DM all linked admins.
-          void notifyAdmins(`🚨 Handoff demandé — visiteur anonyme\nRaison : ${reason}`);
+          // Anonymous visitor — push to the 🛠 Master topic (proactive) and DM
+          // any linked admins as a secondary channel.
+          const note = `🚨 Handoff demandé — visiteur anonyme\nRaison : ${reason}`;
+          void notifyAgencyGroup(ctx.config.agency_id, note);
+          void notifyAdmins(note);
         }
         return { ok: true, handed_off: true };
       }
@@ -268,18 +259,10 @@ export function buildLeadTools(ctx: AgentContext) {
       }),
       execute: async ({ potential_status, status, memory_note }) => {
         const lead = await ensureLead(ctx);
-        const prevPotential = lead.potential_status;
         const updated = await updateLead(lead.id, {
           ...(potential_status !== undefined && { potential_status }),
           ...(status !== undefined && { status })
         });
-
-        // Surface a hot/warm/cold change in the agency's Telegram topic (off-path, guarded).
-        if (potential_status !== undefined) {
-          void syncLeadStatusToTelegram(
-            ctx.config.agency_id, lead.id, prevPotential, potential_status, memory_note
-          ).catch((e) => console.error('[lead-tools] syncLeadStatusToTelegram failed:', e));
-        }
 
         const date = new Date().toISOString().slice(0, 10);
         const parts = [

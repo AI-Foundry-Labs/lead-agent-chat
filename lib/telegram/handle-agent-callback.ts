@@ -21,6 +21,7 @@ import {
   buildLeadsKeyboard,
   buildLeadPickerKeyboard,
   formatAgentLabel,
+  buildLeadLabel,
 } from '@/lib/telegram/agent-command';
 import { getAgentSession, setAgentSession } from '@/lib/db/telegram-agent-sessions';
 import { listLeads, getLeadById, getConversationByLeadId, getVisibleMessages } from '@/lib/db';
@@ -32,7 +33,7 @@ function clip(s: string, max = 3800): string {
 }
 
 function leadButtons(leads: Awaited<ReturnType<typeof listLeads>>) {
-  return leads.map((l) => ({ id: l.id, label: l.name ?? l.email ?? 'Anonymous' }));
+  return leads.map((l) => ({ id: l.id, label: buildLeadLabel(l) }));
 }
 
 async function answerCq(callbackQueryId: string) {
@@ -62,7 +63,7 @@ async function handleLead(chatId: string, agency: Agency, leadId: string, thread
     return;
   }
   await setAgentSession(agency.id, { agent_kind: 'operator', lead_id: leadId });
-  send_(`✅ Agent : ${formatAgentLabel({ agent_kind: 'operator', lead_id: leadId }, lead.name)}`);
+  send_(`✅ Agent : ${formatAgentLabel({ agent_kind: 'operator', lead_id: leadId }, buildLeadLabel(lead))}`);
 }
 
 async function handleDetail(chatId: string, agency: Agency, leadId: string, threadId: number | undefined, send?: SendFn) {
@@ -73,7 +74,7 @@ async function handleDetail(chatId: string, agency: Agency, leadId: string, thre
     return;
   }
   const lines = [
-    `👤 ${lead.name ?? '—'} <${lead.email ?? '—'}>`,
+    `👤 ${buildLeadLabel(lead)}${lead.email ? ` <${lead.email}>` : ''}`,
     `Statut: ${lead.status}${lead.potential_status ? ` · ${lead.potential_status}` : ''}`,
     lead.score_reason ? `Raison: ${lead.score_reason}` : null,
     Object.keys(lead.qual_values ?? {}).length ? `Qualif: ${JSON.stringify(lead.qual_values)}` : null,
@@ -99,7 +100,7 @@ async function handleHistory(chatId: string, agency: Agency, leadId: string, thr
   const body = msgs.length
     ? msgs.map((m) => `${icon[m.role] ?? m.role}: ${m.content}`).join('\n')
     : '(aucun message)';
-  send_(clip(`💬 ${lead.name ?? lead.email ?? 'Lead'} — ${msgs.length} dernier(s) message(s):\n${body}`));
+  send_(clip(`💬 ${buildLeadLabel(lead)} — ${msgs.length} dernier(s) message(s):\n${body}`));
 }
 
 async function handleAgentPage(chatId: string, agency: Agency, page: number, threadId: number | undefined, _send?: SendFn) {

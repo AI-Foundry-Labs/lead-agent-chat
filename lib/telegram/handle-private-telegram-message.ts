@@ -91,8 +91,8 @@ export async function handleAdminMessage(
 
   const send = (msg: string) => void sendTelegramMessage(chatId, msg);
 
-  // Slash commands (/help, /leads, /lead, /lead_history, /pool)
-  if (await tryHandleMasterCommand(chatId, agency, undefined, text, send)) return true;
+  // Slash commands (/help, /leads, /lead, /lead_history, /pool, /reset)
+  if (await tryHandleMasterCommand(chatId, agency, undefined, text, send, fromId)) return true;
 
   // /agent command — show picker or set active agent
   const normalizedText = text.replace(/^(\/\w+)@\S+/, '$1');

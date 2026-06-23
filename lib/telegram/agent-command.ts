@@ -60,6 +60,22 @@ import type { AgentSession } from '@/lib/db/telegram-agent-sessions';
 export type LeadButton = { id: string; label: string };
 type Keyboard = { inline_keyboard: { text: string; callback_data: string }[][] };
 
+/**
+ * Human-readable label for a lead in pickers / labels. Anonymous visitors (no
+ * name/email) are disambiguated by their per-agency sequence number → "Visiteur
+ * #N", so two anonymous leads never both render as a bare "Anonymous".
+ */
+export function buildLeadLabel(lead: {
+  name?: string | null;
+  email?: string | null;
+  anon_seq?: number | null;
+}): string {
+  if (lead.name && lead.name.trim()) return lead.name.trim();
+  if (lead.email && lead.email.includes('@')) return lead.email.split('@')[0];
+  if (lead.anon_seq != null) return `Visiteur #${lead.anon_seq}`;
+  return 'Anonymous';
+}
+
 /** Agent picker keyboard: Main + paginated leads, highlights the currently active one. */
 export function buildAgentKeyboard(
   leads: LeadButton[],

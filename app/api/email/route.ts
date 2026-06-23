@@ -7,7 +7,6 @@ import {
   updateConversation
 } from '@/lib/db';
 import { getAgencyByHost, getDefaultAgency } from '@/lib/db/agencies';
-import { getOrCreateLeadTopics } from '@/lib/telegram/lead-topics';
 import { runAgentTurn } from '@/lib/agent/run';
 
 export const runtime = 'nodejs';
@@ -47,10 +46,6 @@ export async function POST(req: Request) {
       name: parsed.name,
       listing_id: parsed.listing_id
     });
-    const newLeadId = lead.id;
-    void getOrCreateLeadTopics(agency.id, newLeadId).catch((err) =>
-      console.error('[email] getOrCreateLeadTopics failed', newLeadId, err)
-    );
   }
 
   let conv = await getConversationByLeadId(lead.id);

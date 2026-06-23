@@ -104,7 +104,6 @@ ${snapshot}
 - Đặt ảnh listing → set_listing_image(listing_id, image_url)
 - Trạng thái Telegram → get_telegram_status
 - Phát hành link token Telegram → issue_telegram_link_token
-- Đóng Telegram topics của lead → close_lead_telegram_topics(lead_id)
 - Mẫu tin nhắn tái sử dụng → list_templates, get_template, create_template, update_template, delete_template
 - Soạn tin từ mẫu → render_template(template_id, lead_id?) điền {{name}}/{{email}}/{{listing_title}}/{{agency_name}}, rồi đưa kết quả cho send_reply/draft_reply (render KHÔNG tự gửi; kiểm tra unresolved[])
 

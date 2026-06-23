@@ -1,19 +1,15 @@
 /**
  * Agency-scoped Telegram notification for a lead handoff/alert.
  *
- * Posts into the lead's 🤖 Assistant topic — the place the admin acts on the
- * lead (instruct the agent to reply, e.g. "reply: we can reduce 5%"). This puts
- * the call-to-action where the admin can actually respond, instead of the
- * un-actionable General feed.
+ * Single-topic UX: posts proactively into the 🛠 Master topic — the one place
+ * the admin acts on leads via the master agent + slash commands (/leads,
+ * /lead_history, /agent). Admins see the alert immediately, no command needed.
  *
- * Fallback order: 🤖 Assistant topic → 💬 Conversation topic → General feed
- * (only when the lead has no per-lead topics at all, e.g. older leads).
- *
+ * Falls back to the General feed only when the Master topic isn't created yet.
  * kind:'critical' so it is never dropped under queue pressure. Never throws.
  */
 
 import { getAgencyById } from '@/lib/db/agencies';
-import { getLeadTopicsByLead } from '@/lib/db/lead-telegram-topics';
 import { enqueueGroupSend } from '@/lib/telegram/group-send-queue';
 
 export async function notifyAgency(
@@ -29,17 +25,13 @@ export async function notifyAgency(
     }
 
     const groupChatId = agency.telegram_group_chat_id;
-    const topics = await getLeadTopicsByLead(agencyId, leadId);
+    const threadId = agency.telegram_master_topic_id ?? undefined;
 
-    // Prefer the 🤖 Assistant topic (admin instructs the agent there).
-    const threadId =
-      topics?.assistant_topic_id ?? topics?.conversation_topic_id ?? undefined;
-
-    // Hint where to act when we have a lead topic.
-    const text = threadId
-      ? `${summary}\n\n💬 Répondez ici : « reply: … » pour que l'agent réponde au client.\n` +
-        `💬 Reply here: "reply: …" and the agent will message the customer.`
-      : summary;
+    // Point the admin at the master agent for follow-up actions.
+    const text =
+      `${summary}\n\n` +
+      `💬 /lead_history <nom> pour l'historique · /agent pour répondre au client.\n` +
+      `💬 /lead_history <name> for history · /agent to reply to the customer.`;
 
     void enqueueGroupSend(groupChatId, text, {
       ...(threadId ? { threadId } : {}),
@@ -47,5 +39,33 @@ export async function notifyAgency(
     });
   } catch (e) {
     console.error('[notify-agency] failed — non-fatal:', e);
+  }
+}
+
+/**
+ * Push a raw text notification straight into the agency's 🛠 Master topic.
+ *
+ * Used for events that have no lead row yet (e.g. an anonymous visitor handoff)
+ * so the master agent surface still gets the alert proactively. No-op when the
+ * agency has no linked group. Never throws.
+ */
+export async function notifyAgencyGroup(
+  agencyId: string,
+  text: string
+): Promise<void> {
+  try {
+    const agency = await getAgencyById(agencyId);
+    if (!agency?.telegram_group_chat_id) {
+      console.log('[notify-agency] no telegram group for agency', agencyId, '—', text);
+      return;
+    }
+    void enqueueGroupSend(agency.telegram_group_chat_id, text, {
+      ...(agency.telegram_master_topic_id
+        ? { threadId: agency.telegram_master_topic_id }
+        : {}),
+      kind: 'critical'
+    });
+  } catch (e) {
+    console.error('[notify-agency] group send failed — non-fatal:', e);
   }
 }
