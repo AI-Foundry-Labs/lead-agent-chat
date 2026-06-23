@@ -70,6 +70,7 @@ async function main() {
       { command: 'lead', description: 'Détail d’un lead <nom|email>' },
       { command: 'lead_history', description: 'Historique conversation <nom|email>' },
       { command: 'pool', description: 'Visiteurs anonymes' },
+      { command: 'reset', description: 'Effacer l’historique de l’agent actif' },
       { command: 'help', description: 'Aide / liste des commandes' }
     ])
     .catch((e) => console.error('[telegram-dev] setMyCommands failed:', e));

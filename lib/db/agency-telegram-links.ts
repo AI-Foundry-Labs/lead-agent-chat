@@ -44,8 +44,7 @@ export async function bindTelegramGroupToAgency(
 ): Promise<void> {
   // Single-topic UX: per-lead forum topic pairs are DISABLED. Everything happens in
   // the 🛠 Master topic via the assistant + slash commands (/leads, /lead_history, …).
-  // Keep telegram_topics_enabled=false so getOrCreateLeadTopics stays a no-op; the
-  // Master topic itself is created separately by the /link handler.
+  // The Master topic itself is created separately by the bind/link handler.
   await db
     .update(agencies)
     .set({ telegram_group_chat_id: groupChatId, telegram_topics_enabled: false })

@@ -1,6 +1,6 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import { listLeads, getAgencyById, closeLeadTopics } from '@/lib/db';
+import { listLeads, getAgencyById } from '@/lib/db';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { issueAgencyTelegramLinkToken } from '@/lib/auth';
 import type { AgentContext } from '@/lib/agent/tools/context';
@@ -74,14 +74,5 @@ export function buildTelegramTools(ctx: AgentContext) {
         };
       }
     }),
-
-    close_lead_telegram_topics: tool({
-      description: "Close the Telegram forum topics for a lead (marks them as closed in the agency group).",
-      inputSchema: z.object({ lead_id: z.string() }),
-      execute: async ({ lead_id }) => {
-        await closeLeadTopics(lead_id);
-        return { ok: true };
-      }
-    })
   };
 }

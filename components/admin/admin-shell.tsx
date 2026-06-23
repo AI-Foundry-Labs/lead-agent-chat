@@ -12,10 +12,9 @@ import { DashboardPanel } from '@/components/admin/dashboard-panel';
 import { ConversationsPanel } from '@/components/admin/conversations-panel';
 import { ListingsPanel } from '@/components/admin/listings-panel';
 import { ConfigPanel } from '@/components/admin/config-panel';
-import { AssistantPanel } from '@/components/admin/assistant-panel';
 import type { AdminData } from '@/components/admin/admin-types';
 
-type Tab = 'agents' | 'dashboard' | 'conversations' | 'listings' | 'config' | 'assistant';
+type Tab = 'agents' | 'dashboard' | 'conversations' | 'listings' | 'config';
 type LinkInfo = { deepLink: string | null; command: string };
 type CopyState = 'idle' | 'copied';
 
@@ -98,8 +97,7 @@ export function AdminShell() {
     { key: 'dashboard', label: t.tab_dashboard },
     { key: 'conversations', label: t.tab_conversations },
     { key: 'listings', label: t.tab_listings },
-    { key: 'config', label: t.tab_config },
-    { key: 'assistant', label: t.tab_assistant }
+    { key: 'config', label: t.tab_config }
   ];
 
   return (
@@ -183,7 +181,6 @@ export function AdminShell() {
       )}
       {tab === 'listings' && <ListingsPanel data={data} onChanged={refetch} />}
       {tab === 'config' && <ConfigPanel data={data} onChanged={refetch} />}
-      {tab === 'assistant' && <AssistantPanel />}
     </div>
   );
 }

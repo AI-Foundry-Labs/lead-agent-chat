@@ -9,7 +9,6 @@ import {
 } from '@/lib/db';
 import { isIdentifiedLead } from '@/lib/leads/is-identified-lead';
 import { promoteAnonymousVisitor } from '@/lib/telegram/promote-anonymous-visitor';
-import { syncLeadTopicTitles } from '@/lib/telegram/sync-lead-topic-titles';
 import { broadcastAgencyDataChanged } from '@/lib/events';
 import { recordAudit } from '@/lib/db';
 import type { AgentContext } from '@/lib/agent/tools/context';
@@ -102,10 +101,6 @@ export function buildVisitorPoolTools(ctx: AgentContext, adminId: string) {
         if (email?.trim()) patch.email = email.trim();
         const updated = await updateLead(leadId, patch);
 
-        // Reflect the real identity on the Telegram topic titles (off the path).
-        void syncLeadTopicTitles(agencyId, leadId).catch((e) =>
-          console.error('[visitor-pool] syncLeadTopicTitles failed', e)
-        );
         await recordAudit({ agency_id: agencyId, admin_id: adminId, action: 'lead_identified', target_lead_id: leadId });
         broadcastAgencyDataChanged(agencyId);
 

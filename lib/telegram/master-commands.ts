@@ -14,7 +14,13 @@ import {
   getConversationByLeadId,
   getVisibleMessages,
   listAnonymousVisitorThreads,
+  getOrCreateMainAssistant,
+  getOrCreateLeadOperator,
+  clearConversationMessages,
+  updateConversation,
 } from '@/lib/db';
+import { getAgentSession, resolveActiveActor } from '@/lib/db/telegram-agent-sessions';
+import { resolveActingAdmin } from '@/lib/telegram/resolve-agency-admin';
 import { buildLeadsKeyboard, buildLeadPickerKeyboard, buildLeadLabel } from '@/lib/telegram/agent-command';
 import type { Agency } from '@/lib/db/agencies';
 import type { Lead } from '@/lib/types';
@@ -26,6 +32,7 @@ const HELP = [
   "/lead <nom|email> — détail d’un lead",
   "/lead_history [nom|email] — historique de conversation d’un lead",
   '/pool — visiteurs anonymes (non identifiés)',
+  "/reset — effacer l’historique de chat de l’agent actif",
   '/help — cette aide',
   '',
   "💬 Tapez du texte normal pour discuter avec l’agent actif.",
@@ -69,7 +76,8 @@ export async function tryHandleMasterCommand(
   agency: Agency,
   threadId: number | undefined,
   text: string,
-  sendFn?: (msg: string) => void
+  sendFn?: (msg: string) => void,
+  fromId?: string
 ): Promise<boolean> {
   const trimmed = text.trim();
   if (!trimmed.startsWith('/')) return false;
@@ -87,6 +95,32 @@ export async function tryHandleMasterCommand(
     case '/help':
       reply(HELP);
       return true;
+
+    case '/reset': {
+      // Wipe the chat history of the CURRENTLY ACTIVE agent (main or operator).
+      const admin = fromId ? await resolveActingAdmin(fromId, agency.id) : null;
+      if (!admin) {
+        reply('❌ Administrateur introuvable.');
+        return true;
+      }
+      const session = await getAgentSession(agency.id);
+      const actor = resolveActiveActor(session);
+      // Default to the main assistant when no agent is explicitly selected.
+      const conv =
+        actor?.type === 'operator'
+          ? await getOrCreateLeadOperator(actor.leadId, agency.id)
+          : await getOrCreateMainAssistant(admin.id, agency.id);
+      const removed = await clearConversationMessages(conv.id);
+      // Also clear rolling thread memory so context truly resets.
+      await updateConversation(conv.id, {
+        thread_summary: null,
+        summarized_turn_count: 0,
+      });
+      const who =
+        actor?.type === 'operator' ? "l’agent opérateur" : "l’assistant principal";
+      reply(`🧹 Historique effacé pour ${who} (${removed} message(s) supprimé(s)).`);
+      return true;
+    }
 
     case '/leads': {
       let leads = await listLeads(agency.id);

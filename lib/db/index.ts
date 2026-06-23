@@ -38,8 +38,6 @@ export * from './lead-telegram-links';
 export type { LeadTelegramLinkPayload } from './lead-telegram-links';
 export * from './agencies';
 export * from './agency-telegram-links';
-export * from './lead-telegram-topics';
-export type { LeadTelegramTopics } from './lead-telegram-topics';
 export * from './telegram-agent-sessions';
 export * from './admins';
 export * from './message-templates';

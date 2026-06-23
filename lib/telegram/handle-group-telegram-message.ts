@@ -45,8 +45,8 @@ export async function handleMasterTopicMessage(
       return;
     }
 
-    // Deterministic read commands (/help, /leads, /lead, /lead_history, /pool).
-    if (await tryHandleMasterCommand(chatId, agency, threadId, text)) return;
+    // Deterministic read commands (/help, /leads, /lead, /lead_history, /pool, /reset).
+    if (await tryHandleMasterCommand(chatId, agency, threadId, text, undefined, fromId)) return;
 
     // Strip @botname suffix Telegram appends in group chats (e.g. /agent@bot → /agent).
     const normalizedText = text.replace(/^(\/\w+)@\S+/, '$1');

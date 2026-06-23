@@ -63,6 +63,20 @@ export async function addMessage(input: {
   return rowToMessage(r);
 }
 
+/**
+ * Delete ALL messages of a conversation. Used by the Master agent /reset command
+ * to wipe chat history. Returns the number of rows removed.
+ */
+export async function clearConversationMessages(
+  conversationId: string
+): Promise<number> {
+  const rows = await db
+    .delete(messages)
+    .where(eq(messages.conversation_id, conversationId))
+    .returning({ id: messages.id });
+  return rows.length;
+}
+
 export async function getLastVisibleMessage(
   conversationId: string
 ): Promise<Message | null> {
